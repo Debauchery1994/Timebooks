@@ -34,7 +34,7 @@ from .storage import TimecardBook, WorkbookError
 try:
     from . import APP_NAME, __version__
 except ImportError:  # pragma: no cover
-    APP_NAME, __version__ = "TimeCard Pro", "1.1.0"
+    APP_NAME, __version__ = "TimeCard Pro", "1.2.0"
 
 # --------------------------------------------------------------------------- constants
 
@@ -3642,7 +3642,7 @@ class App(tk.Tk):
         initial_dir = self.book.path.parent if (self.book and self.book.path) else documents_dir()
         path = filedialog.asksaveasfilename(
             parent=self, title="Save new workbook as", defaultextension=".xlsx", initialdir=str(initial_dir),
-            initialfile=safe_filename(f"{res['name']} Timecards {res['year']}.xlsx"),
+            initialfile=paths.workbook_filename(res['name'], res['year']),
             filetypes=[("Excel workbooks", "*.xlsx")])
         if not path:
             return
@@ -3728,7 +3728,7 @@ class App(tk.Tk):
         path = filedialog.asksaveasfilename(
             parent=self, title="Save workbook as", defaultextension=".xlsx", initialdir=str(initial_dir),
             initialfile=self.book.path.name if self.book.path else
-            safe_filename(f"{c.company_name} Timecards {c.year}.xlsx"),
+            paths.workbook_filename(c.company_name, c.year),
             filetypes=[("Excel workbooks", "*.xlsx")])
         if not path:
             return False

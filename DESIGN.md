@@ -233,3 +233,14 @@ stored (collect W-9s).
 - The app asks to save, starts `Setup.exe --update <TimeCardPro.exe> --wait-pid <pid>` and closes. The installer waits
   for that process, updates the same copy (portable in place, `Data` untouched; installed copy keeps whichever
   shortcuts exist), retries while files are locked, then restarts the app. Nothing about the user is sent.
+
+## Default workbook folder and the workbook Setup creates
+- Installed copies keep workbooks in **Documents\TimeCard Pro** (`paths.default_workbook_dir`), created automatically;
+  Documents is the real known folder from Windows (`SHGetKnownFolderPath`), so a OneDrive-redirected Documents is used.
+  Portable copies keep `Data\Workbooks` on the drive. Every New/Save As/Open/export dialog starts there.
+  Never inside the program folder: updates replace it and uninstall deletes it.
+- Setup → "Timecard workbook": **Company name** (required) and a live preview of the path. After installing it creates
+  `<Company> Timecards <year>.xlsx` (`paths.workbook_filename`) for the current year, never overwriting an existing file,
+  and writes it to settings.json as `last_workbook` + top of Recent Files, so the app opens it on first launch.
+  If settings already point at a workbook that exists, Setup shows it as kept and asks nothing.
+  Silent installs: `--company "Name"`.

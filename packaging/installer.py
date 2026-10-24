@@ -4,7 +4,8 @@ Built by build.py into a single Setup.exe that carries the app as an embedded zi
 Always installs to its own folder, %LOCALAPPDATA%\\Programs\\TimeCardPro (no admin rights needed), no matter
 where Setup.exe is run from. Optional Start Menu and Desktop shortcuts. Registers an entry in Settings > Apps so it
 can be uninstalled.
-Workbooks live wherever the user saves them (Documents by default) and are never touched.
+Setup asks for the company name and creates this year's workbook in Documents\\TimeCard Pro, which the app then opens
+first. Workbooks live wherever the user saves them and are never touched by updates or uninstall.
 
 Portable mode instead copies the program to "<drive>\\TimeCard Pro Portable" (e.g. a USB drive) with a
 portable.txt marker. That copy keeps its workbooks, PIN and settings in its own Data folder and writes
@@ -12,8 +13,9 @@ nothing to the computer: no shortcuts, no registry entry, no uninstaller (delete
 Data holds the workbooks).
 
   Setup.exe                 interactive install
-  Setup.exe --silent [--pin 1234] [--no-desktop] [--no-start-menu]
-                            install without UI (without --pin the app asks for a PIN on first use)
+  Setup.exe --silent [--pin 1234] [--company "Acme LLC"] [--no-desktop] [--no-start-menu]
+                            install without UI (without --pin the app asks for a PIN on first use; --company
+                            creates this year's workbook in Documents\\TimeCard Pro unless one is already set up)
   Setup.exe --silent --portable E:\\   make a portable copy in E:\\TimeCard Pro Portable
   Setup.exe --update <TimeCardPro.exe> [--wait-pid N]
                             started by the app's Check for Updates: waits for the app to close, updates that copy
@@ -27,11 +29,13 @@ import shutil
 import subprocess
 import sys
 import ctypes
+import json
 import tempfile
 import threading
 import time
 import winreg
 import zipfile
+from datetime import date
 from pathlib import Path
 
 from timecard import __version__, paths, security
@@ -113,6 +117,60 @@ def uninstall() -> None:
         bat = Path(tempfile.gettempdir()) / "timecardpro_cleanup.cmd"
         bat.write_text(f'@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nrmdir /s /q "{INSTALL_DIR}"\r\ndel "%~f0"\r\n')
         subprocess.Popen(["cmd", "/c", str(bat)], creationflags=NO_WINDOW | 0x00000008)  # DETACHED_PROCESS
+
+
+def _settings_file(settings_dir: Path) -> Path:
+    return settings_dir / "settings.json"
+
+
+def existing_workbook(settings_dir: Path, app_base: Path) -> Path | None:
+    """The workbook the app already opens first on this computer/drive, if that file still exists."""
+    try:
+        data = json.loads(_settings_file(settings_dir).read_text(encoding="utf-8"))
+        p = Path(paths.resolve_path(str(data.get("last_workbook") or ""), app_base))
+    except (OSError, ValueError, AttributeError):
+        return None
+    return p if p.suffix and p.is_file() else None
+
+
+def planned_workbook(company_name: str, app_base: Path, portable: bool) -> Path:
+    """Where Setup will create the workbook: Documents\\TimeCard Pro (or the portable drive's Data\\Workbooks)."""
+    return (paths.default_workbook_dir(app_base, portable)
+            / paths.workbook_filename(company_name, date.today().year))
+
+
+def remember_workbook(settings_dir: Path, workbook: Path, app_base: Path) -> None:
+    """Make `workbook` the one the app opens first (settings.json last_workbook + top of Recent Files)."""
+    f = _settings_file(settings_dir)
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    stored = paths.store_path(workbook, app_base)
+    recent = [r for r in data.get("recent") or [] if isinstance(r, str) and r.lower() != stored.lower()]
+    data["last_workbook"] = stored
+    data["recent"] = [stored] + recent[:7]
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def create_workbook(company_name: str, settings_dir: Path, app_base: Path) -> Path:
+    """Create this year's workbook for `company_name` in the default folder, which is created too (an existing
+    file with that name is kept, never overwritten), and make it the workbook the app opens first.
+    Call after installing, so a portable copy's marker is in place."""
+    from timecard.models import Company
+    from timecard.storage import TimecardBook
+
+    wb = planned_workbook(company_name, app_base, paths.is_portable(app_base))
+    wb.parent.mkdir(parents=True, exist_ok=True)
+    if not wb.exists():
+        TimecardBook.new(Company(company_name=company_name.strip(), year=date.today().year)).save(wb)
+    remember_workbook(settings_dir, wb, app_base)
+    return wb
 
 
 def use_settings_dir(folder: Path) -> None:
@@ -323,12 +381,22 @@ def gui(mode: str) -> None:
     ttk.Label(where, text=hint, foreground="#555", justify="left").grid(row=4, column=0, columnspan=3, sticky="w",
                                                                        padx=(22, 0), pady=(4, 0))
 
+    book_box = ttk.LabelFrame(frm, text="Timecard workbook", padding=10)
+    book_box.pack(fill="x", pady=(12, 0))
+    company_var, book_hint = tk.StringVar(), tk.StringVar()
+
     pin_box = ttk.LabelFrame(frm, text="Employee records PIN", padding=10)
     pin_box.pack(fill="x", pady=(12, 0))
     pin_var, confirm_var = tk.StringVar(), tk.StringVar()
     question_var = tk.StringVar(value=security.SECURITY_QUESTIONS[0])
     answer_var, answer_confirm_var = tk.StringVar(), tk.StringVar()
-    state = {"keep_pin": False, "keep_recovery": False}
+    state: dict = {"keep_pin": False, "keep_recovery": False, "keep_book": None}
+
+    def app_base() -> Path | None:
+        """Folder the program will be installed in."""
+        if kind.get() == "computer":
+            return INSTALL_DIR
+        return portable_target(drive_var.get().strip()) if drive_var.get().strip() else None
 
     def target_settings_dir() -> Path | None:
         if kind.get() == "computer":
@@ -337,8 +405,39 @@ def gui(mode: str) -> None:
             return None
         return paths.portable_data_dir(portable_target(drive_var.get().strip())) / "Settings"
 
+    def update_book_hint(*_args) -> None:
+        base = app_base()
+        if base is None:
+            book_hint.set("Choose the drive above first.")
+            return
+        name = company_var.get().strip()
+        portable = kind.get() == "portable"
+        wb = (planned_workbook(name, base, portable) if name else
+              paths.default_workbook_dir(base, portable) / f"<Company> Timecards {date.today().year}.xlsx")
+        book_hint.set(f"This year's workbook is created and saved as:\n{wb}")
+
+    def build_book_box() -> None:
+        """Ask for the company name, unless the app already has a workbook there (it is kept)."""
+        for w in book_box.winfo_children():
+            w.destroy()
+        base, folder = app_base(), target_settings_dir()
+        state["keep_book"] = existing_workbook(folder, base) if base and folder else None
+        if state["keep_book"]:
+            ttk.Label(book_box, text=f"Your workbook is kept and opens when the app starts:\n{state['keep_book']}",
+                      justify="left").grid(row=0, column=0, sticky="w")
+            return
+        ttk.Label(book_box, text="Company name:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Entry(book_box, textvariable=company_var, width=36).grid(row=0, column=1, sticky="w")
+        ttk.Label(book_box, textvariable=book_hint, foreground="#555", justify="left").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        book_box.columnconfigure(1, weight=1)   # the long path line widens column 1, not the label column
+        update_book_hint()
+
+    company_var.trace_add("write", update_book_hint)
+
     def build_pin_box(*_args) -> None:
         """Show PIN fields for where the PIN will live; an existing PIN there is kept."""
+        build_book_box()
         for w in pin_box.winfo_children():
             w.destroy()
         folder = target_settings_dir()
@@ -427,9 +526,11 @@ def gui(mode: str) -> None:
                 messagebox.showerror(f"{APP_NAME} Setup", problem)
                 return
         build_pin_box()  # make sure the PIN check below matches the folder actually chosen
-        keep_pin, keep_recovery = state["keep_pin"], state["keep_recovery"]
+        keep_pin, keep_recovery, keep_book = state["keep_pin"], state["keep_recovery"], state["keep_book"]
         problem = None
-        if not keep_pin:
+        if not keep_book and not company_var.get().strip():
+            problem = "Enter the company name for the timecard workbook."
+        if not problem and not keep_pin:
             problem = security.validate_pin(pin_var.get())
             if not problem and pin_var.get() != confirm_var.get():
                 problem = "The PINs do not match."
@@ -455,16 +556,25 @@ def gui(mode: str) -> None:
             root.config(cursor="")
             messagebox.showerror(f"{APP_NAME} Setup", f"Installation failed:\n{exc}")
             return
+        try:
+            book = keep_book or create_workbook(company_var.get(), target_settings_dir(), exe.parent)
+            book_note = f"\n\nYour timecard workbook:\n{book}"
+        except Exception as exc:  # noqa: BLE001 - the program itself is installed; say what to do instead
+            book_note = (f"\n\nThe workbook could not be created ({exc}).\n"
+                         "Use New Year Workbook in the app to create it.")
+        root.config(cursor="")
         if portable:
             messagebox.showinfo(f"{APP_NAME} Setup", f"The portable copy is ready in:\n{exe.parent}\n\n"
                                 "On any computer, open that folder and run TimeCardPro.exe.\n"
-                                "Save workbooks in its Data\\Workbooks folder so they stay on the drive.")
+                                "Save workbooks in its Data\\Workbooks folder so they stay on the drive."
+                                + book_note)
         else:
             places = [n for n, on in (("the Start Menu", want_start_menu.get()), ("the Desktop", want_desktop.get()))
                       if on]
             messagebox.showinfo(f"{APP_NAME} Setup", f"{APP_NAME} is installed in:\n{INSTALL_DIR}\n\n"
                                 + (f"Shortcuts were added to {' and '.join(places)}." if places else
-                                   f"No shortcuts were added. Run {APP_EXE} from the folder above."))
+                                   f"No shortcuts were added. Run {APP_EXE} from the folder above.")
+                                + book_note)
         if launch.get():
             env = {k: v for k, v in os.environ.items() if k != "TIMECARDPRO_SETTINGS_DIR"}
             subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
@@ -488,13 +598,17 @@ def main() -> None:
             uninstall()
         elif "--portable" in sys.argv[:-1]:
             target = portable_target(sys.argv[sys.argv.index("--portable") + 1])
-            use_settings_dir(paths.portable_data_dir(target) / "Settings")
-            install_portable(target)
+            settings = paths.portable_data_dir(target) / "Settings"
+            use_settings_dir(settings)
+            exe = install_portable(target)
         else:
-            use_settings_dir(installed_settings_dir())
-            install("--no-desktop" not in args, "--no-start-menu" not in args)
+            settings = installed_settings_dir()
+            use_settings_dir(settings)
+            exe = install("--no-desktop" not in args, "--no-start-menu" not in args)
             if "--pin" in sys.argv[:-1]:
                 security.set_pin(sys.argv[sys.argv.index("--pin") + 1])
+        if mode != "uninstall" and _arg("--company") and not existing_workbook(settings, exe.parent):
+            create_workbook(_arg("--company"), settings, exe.parent)
     else:
         gui(mode)
 
