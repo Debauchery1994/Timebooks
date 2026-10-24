@@ -34,7 +34,7 @@ from .storage import TimecardBook, WorkbookError
 try:
     from . import APP_NAME, __version__
 except ImportError:  # pragma: no cover
-    APP_NAME, __version__ = "TimeCard Pro", "1.2.0"
+    APP_NAME, __version__ = "TimeCard Pro", "1.1.1"
 
 # --------------------------------------------------------------------------- constants
 
