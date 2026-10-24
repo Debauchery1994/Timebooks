@@ -41,6 +41,8 @@ except ImportError:  # pragma: no cover
 GRIDCRAFT_EXE = Path(r"C:\Program Files\GridCraft\gridcraft.exe")
 OUTPUT_DIR_NAME = "TimeCard Pro Output"
 MAX_RECENT = 8
+AUTOSAVE_DELAY_MS = 2000      # save this long after the last change
+AUTOSAVE_RETRY_MS = 30_000    # retry while the file is open in another program
 FONT_FAMILY = "Segoe UI"
 
 
@@ -522,7 +524,8 @@ class Settings:
         self.data: dict = {"last_workbook": "", "geometry": "", "zoomed": False, "recent": [],
                            "backup_dir": "", "backup_on_save": False, "backup_keep": backup.DEFAULT_KEEP,
                            "last_backup": "", "theme": "Light", "text_scale": 100,
-                           "update_check_on_start": True, "last_update_check": "", "skip_version": ""}
+                           "update_check_on_start": True, "last_update_check": "", "skip_version": "",
+                           "autosave": True}
         try:
             with open(SETTINGS_PATH, encoding="utf-8") as f:
                 loaded = json.load(f)
@@ -2277,6 +2280,7 @@ class PayrollTab(ttk.Frame):
         super().__init__(master, padding=12)
         self.app = app
         self.periods: list[tuple[date, date]] = []
+        self.period_chosen = False   # True once the user picks a period; until then follow the default
         self.preview: dict[str, dict] = {}   # eid -> {emp, hours, other, memo, record, dup}
         self.preview_period: tuple[date, date] | None = None
         self._ot_shown: bool | None = None
@@ -2288,7 +2292,7 @@ class PayrollTab(ttk.Frame):
         ttk.Button(g1, text="\u25C0", width=3, command=lambda: self.step_period(-1)).pack(side="left", padx=(6, 2))
         self.cb_period = ttk.Combobox(g1, state="readonly", width=31)
         self.cb_period.pack(side="left")
-        self.cb_period.bind("<<ComboboxSelected>>", lambda e: self.on_period_change())
+        self.cb_period.bind("<<ComboboxSelected>>", lambda e: self._chose_period())
         ttk.Button(g1, text="\u25B6", width=3, command=lambda: self.step_period(1)).pack(side="left", padx=(2, 0))
         g2 = top.group()
         ttk.Label(g2, text="Check date").pack(side="left")
@@ -2371,16 +2375,38 @@ class PayrollTab(ttk.Frame):
         old = self.selected_period()
         self.periods = calc.periods_in_year(self.book.company)
         self.cb_period["values"] = [fmt_period(p) for p in self.periods]
-        if old in self.periods:
+        if old in self.periods and self.period_chosen:
             self.cb_period.current(self.periods.index(old))
         elif self.periods:
-            # default: the most recent period that has ended (the one usually being paid)
-            today = date.today()
-            idx = period_index_for(self.periods, today)
-            if idx > 0 and self.periods[idx][0] <= today <= self.periods[idx][1]:
-                idx -= 1
-            self.cb_period.current(idx)
+            self.cb_period.current(self._default_period_index())
         self.on_period_change()
+
+    def _default_period_index(self) -> int:
+        """The period that just ended (the one usually being paid), unless it has no unpaid hours and the
+        current period does - e.g. in the first week of using the app."""
+        today = date.today()
+        idx = period_index_for(self.periods, today)
+        if idx > 0 and self.periods[idx][0] <= today <= self.periods[idx][1]:
+            if self._unpaid_hourly(self.periods[idx - 1]) or not self._unpaid_hourly(self.periods[idx]):
+                idx -= 1
+        return idx
+
+    def _unpaid_hourly(self, period: tuple[date, date]) -> set[str]:
+        """Active hourly people with hours in `period` and no (non-voided) check for it yet."""
+        start, end = period
+        paid = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
+        return {e.employee_id for e in self.book.active_employees()
+                if not is_salaried(e) and e.employee_id not in paid
+                and calc.summarize_hours(self.book.entries_for(e.employee_id, start, end),
+                                         self.book.company, start, end).total > 0}
+
+    def _hours_elsewhere(self, eid: str, current: tuple[date, date]) -> tuple[date, date] | None:
+        """The latest other period (up to today) where `eid` has unpaid hours, if any."""
+        today = date.today()
+        for p in reversed(self.periods):
+            if p != current and p[0] <= today and eid in self._unpaid_hourly(p):
+                return p
+        return None
 
     def selected_period(self) -> tuple[date, date] | None:
         i = self.cb_period.current()
@@ -2390,7 +2416,21 @@ class PayrollTab(ttk.Frame):
         i = self.cb_period.current() + delta
         if 0 <= i < len(self.periods):
             self.cb_period.current(i)
-            self.on_period_change()
+            self._chose_period()
+
+    def _chose_period(self) -> None:
+        self.period_chosen = True   # keep the user's choice instead of the automatic default
+        self.on_period_change()
+
+    def on_shown(self) -> None:
+        """Tab opened: until the user picks a period, follow the default (hours may have been entered since)."""
+        if self.book is not None and not self.period_chosen and not self.preview and self.periods:
+            idx = self._default_period_index()
+            if idx != self.cb_period.current():
+                self.cb_period.current(idx)
+                self.on_period_change()
+                return
+        self.load_recorded()
 
     def on_period_change(self) -> None:
         self.preview.clear()
@@ -2445,11 +2485,12 @@ class PayrollTab(ttk.Frame):
         self.preview.clear()
         self.preview_period = p
         already = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
-        no_rate, dups = [], []
+        no_rate, dups, no_hours = [], [], []
         for emp in self.book.active_employees():
             entries = self.book.entries_for(emp.employee_id, start, end)
             hours = calc.summarize_hours(entries, self.book.company, start, end)
             if hours.total <= 0 and not is_salaried(emp):   # salaried people are paid every period
+                no_hours.append(emp)
                 continue
             if not self.book.has_pay_rate(emp.employee_id):
                 no_rate.append(emp.full_name)
@@ -2462,6 +2503,14 @@ class PayrollTab(ttk.Frame):
                 dups.append(emp.full_name)
         self._render_preview()
         notes = []
+        elsewhere = [(e, self._hours_elsewhere(e.employee_id, p)) for e in no_hours]
+        elsewhere = [(e, q) for e, q in elsewhere if q is not None]
+        if elsewhere:
+            notes.append("No hours in this period for " + "; ".join(
+                f"{e.full_name} (has unpaid hours in {q[0]:%m/%d}-{q[1]:%m/%d})" for e, q in elsewhere)
+                + ". Choose that pay period above to pay them.")
+        elif no_hours and not self.preview:
+            notes.append("No hours were entered on the Time Card for this pay period.")
         if dups:
             notes.append("Already paid for this period (shown in orange): " + ", ".join(dups) + ".")
         if no_rate:
@@ -3282,6 +3331,8 @@ class App(tk.Tk):
         self.refresh_branding()
 
         self._update_thread: threading.Thread | None = None
+        self._autosave_job: str | None = None
+        self._unbacked_autosave = False   # auto-saves since the last backup (backed up when closing)
         if getattr(sys, "frozen", False):   # only the installed/portable app checks; not tests or source runs
             self.after(4000, self._startup_update_check)
 
@@ -3399,6 +3450,8 @@ class App(tk.Tk):
         fm.add_separator()
         fm.add_command(label="Save", accelerator="Ctrl+S", command=self.save)
         fm.add_command(label="Save As\u2026", command=self.save_as)
+        self.v_autosave = tk.BooleanVar(value=bool(self.settings.data.get("autosave", True)))
+        fm.add_checkbutton(label="Save automatically", variable=self.v_autosave, command=self._toggle_autosave)
         fm.add_separator()
         fm.add_command(label="Open in GridCraft", command=self.open_in_gridcraft)
         fm.add_command(label="Open Output Folder", command=self.open_output_folder)
@@ -3536,6 +3589,43 @@ class App(tk.Tk):
         if self.book is not None:
             self.book.dirty = True
         self.update_title()
+        self._schedule_autosave()
+
+    # ----- autosave
+    def _toggle_autosave(self) -> None:
+        self.settings.data["autosave"] = bool(self.v_autosave.get())
+        self.settings.save()
+        if self.v_autosave.get():
+            self._schedule_autosave()
+
+    def _schedule_autosave(self, delay_ms: int = AUTOSAVE_DELAY_MS) -> None:
+        if self._autosave_job is not None:
+            self.after_cancel(self._autosave_job)
+            self._autosave_job = None
+        if self.settings.data.get("autosave", True) and self.book is not None and self.book.path is not None:
+            self._autosave_job = self.after(delay_ms, self._autosave)
+
+    def _autosave(self) -> None:
+        """Quietly save the open workbook; a locked file only warns in the status bar and retries."""
+        self._autosave_job = None
+        if self.book is None or self.book.path is None or not self.book.dirty:
+            return
+        try:
+            self.book.save()
+        except WorkbookError as exc:
+            log.warning("Autosave failed: %s", exc)
+            self.status(f"Could not save automatically ({exc}). Close the workbook in other programs; "
+                        "TimeCard Pro will try again.", error=True)
+            self._schedule_autosave(AUTOSAVE_RETRY_MS)
+            return
+        self._unbacked_autosave = True
+        self.update_title()
+
+    def _backup_after_autosaves(self) -> None:
+        """Auto-saves skip the backup copy (it would fill the backup folder); make one when leaving the book."""
+        if self._unbacked_autosave and self.book is not None and self.book.path is not None:
+            self._unbacked_autosave = False
+            self.auto_backup()
 
     def update_title(self) -> None:
         if self.book is None:
@@ -3555,7 +3645,12 @@ class App(tk.Tk):
 
     # ----- book lifecycle
     def set_book(self, book: TimecardBook) -> None:
+        self._backup_after_autosaves()
+        if self._autosave_job is not None:
+            self.after_cancel(self._autosave_job)
+            self._autosave_job = None
         self.book = book
+        self.payroll_tab.period_chosen = False
         self._show_book_ui(True)
         self.employees_tab.selected = None
         self.refresh_all(keep_selection=False)
@@ -3592,7 +3687,7 @@ class App(tk.Tk):
         if current is self.yearlog_tab:
             self.yearlog_tab.reload()
         elif current is self.payroll_tab:
-            self.payroll_tab.load_recorded()
+            self.payroll_tab.on_shown()
         elif current is self.timecard_tab:
             self.timecard_tab.update_totals()
 
@@ -3635,6 +3730,10 @@ class App(tk.Tk):
         self.commit_pending()
         if self.book is None or not self.book.dirty:
             return True
+        if self.settings.data.get("autosave", True) and self.book.path is not None:
+            self._autosave()   # saving automatically: save now instead of asking
+            if not self.book.dirty:
+                return True
         ans = messagebox.askyesnocancel(APP_NAME, "Save changes to the current workbook?", parent=self)
         if ans is None:
             return False
@@ -3733,6 +3832,7 @@ class App(tk.Tk):
 
     def auto_backup(self) -> None:
         """Back up after a save when the user turned that on; never blocks saving."""
+        self._unbacked_autosave = False
         if self.settings.data.get("backup_on_save") and self.settings.backup_dir:
             self.backup_now(quiet=True)
 
@@ -3956,6 +4056,7 @@ class App(tk.Tk):
 
     def _close(self) -> None:
         """Remember the window state and close (the caller has already dealt with unsaved changes)."""
+        self._backup_after_autosaves()
         try:
             zoomed = self.state() == "zoomed"
             self.settings.data["zoomed"] = zoomed
