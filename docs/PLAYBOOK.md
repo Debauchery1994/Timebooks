@@ -121,8 +121,10 @@ can find it can open it in GridCraft/Excel and read pay rates.
       workbook opens with a warning and is never saved over (no autosave, Save refuses, Save As a copy works).
       Older workbooks upgrade on save: the writers always write every current column, so no separate migration
       step was needed. Protects from 1.2.0 on; 1.1.x copies don't read the marker.
-- [ ] `Company.features` setting and a tab registry the notebook is built from.
-- [ ] Setup: an optional "What does your business need?" step that sets the switches.
+- [x] Features switches `Company.use_timecards` (Time Card + Year Log) and `Company.use_payroll` (Pay & Checks), and a
+      tab registry (`App.tab_specs`) the notebook is built from. Expenses / Vendors / Sales switches get added with
+      those features. With time cards off, Pay & Checks pays salaried people and says why hourly people are skipped.
+- [x] Setup: "What does your business need?" (two boxes, both on); silent install `--no-timecards` / `--no-payroll`.
 
 **Done when** an all-salary business can hide Time Card and Year Log and still run payroll, and the app reopens the
 same way.

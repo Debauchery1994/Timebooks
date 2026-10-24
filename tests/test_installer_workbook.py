@@ -87,6 +87,13 @@ class SetupWorkbookTests(unittest.TestCase):
         self.assertEqual(data["recent"][0], str(wb))
         self.assertEqual(installer.existing_workbook(self.settings, self.app), wb)
 
+    def test_what_the_business_needs_sets_the_features(self) -> None:
+        book = TimecardBook.load(installer.create_workbook("Acme LLC", self.settings, self.app))
+        self.assertEqual((book.company.use_timecards, book.company.use_payroll), (True, True))
+        wb = installer.create_workbook("Salary Co", self.settings, self.app, use_timecards=False)
+        book = TimecardBook.load(wb)
+        self.assertEqual((book.company.use_timecards, book.company.use_payroll), (False, True))
+
     def test_never_overwrites_an_existing_workbook(self) -> None:
         wb = installer.create_workbook("Acme LLC", self.settings, self.app)
         book = TimecardBook.load(wb)

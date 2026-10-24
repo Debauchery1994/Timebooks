@@ -45,6 +45,9 @@ class Company:
     pto_paid: bool = True
     holiday_paid: bool = True
     sick_paid: bool = True
+    # Features the business uses (Company Settings > Features). Turning one off hides its tabs; nothing is deleted.
+    use_timecards: bool = True   # Time Card and Year Log (hourly pay comes from these hours)
+    use_payroll: bool = True     # Pay & Checks
     # Tabs the owner has put behind the PIN (Company Settings > Locked by PIN). Company Settings itself is always
     # locked, since these switches live there. There is one PIN for the whole app, set up when it was installed.
     lock_timecard: bool = False

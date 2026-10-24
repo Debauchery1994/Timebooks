@@ -66,6 +66,8 @@ class CompanyTab(PinLockable, ttk.Frame):
         ("Branding", "logo_on_checks", "Checks", "bool", "Show logo on checks (stubs; check face only on blank stock)"),
         ("Branding", "logo_on_reports", "Reports", "bool",
          "Show logo on reports (time cards, register, annual statements)"),
+        ("Features", "use_timecards", "Time cards", "bool", "Track hours (Time Card and Year Log tabs)"),
+        ("Features", "use_payroll", "Payroll checks", "bool", "Pay people and print checks (Pay & Checks tab)"),
         ("Locked by PIN", "lock_timecard", "Time Card", "bool", "Lock the Time Card tab"),
         ("Locked by PIN", "lock_employees", "Employees", "bool", "Lock the Employees tab"),
         ("Locked by PIN", "lock_yearlog", "Year Log", "bool", "Lock the Year Log tab"),
@@ -91,7 +93,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         body = sf.inner
         frames: dict[str, ttk.Frame] = {}
         layout = {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1), "Checks": (1, 1),
-                  "Time off": (2, 1), "Locked by PIN": (3, 0)}
+                  "Time off": (2, 1), "Locked by PIN": (3, 0), "Features": (3, 1)}
         rows: dict[str, int] = {}
         for section, (r, c) in layout.items():
             lf = ttk.LabelFrame(body, text=section, padding=12)
@@ -209,6 +211,11 @@ class CompanyTab(PinLockable, ttk.Frame):
         ttk.Label(frames["Pay"], text="Contractors: leave overtime off so every hour is paid at the same rate.",
                   style="Muted.TLabel", wraplength=360).grid(row=rows["Pay"], column=0, columnspan=2, sticky="w",
                                                              pady=(8, 0))
+        ttk.Label(frames["Features"], style="Muted.TLabel", wraplength=420, justify="left",
+                  text="Turn off what the business doesn't use and its tabs are hidden. Nothing is deleted: turn it "
+                       "back on and everything is still there. With time cards off, Pay & Checks pays salaried "
+                       "people only (hourly pay comes from Time Card hours).").grid(
+            row=rows["Features"], column=0, columnspan=2, sticky="w", pady=(8, 0))
         ttk.Label(frames["Locked by PIN"], style="Muted.TLabel", wraplength=420, justify="left",
                   text="Locked tabs ask for the PIN set up when TimeCard Pro was installed (File > Change PIN to "
                        "change it) and lock again when you leave them or after 5 minutes. Company Settings is "
@@ -339,13 +346,14 @@ class CompanyTab(PinLockable, ttk.Frame):
         self._sections_single = single
         f = self.section_frames
         if single:
-            order = ("Company", "Bank", "Branding", "Pay", "Time off", "Checks", "Locked by PIN")
+            order = ("Company", "Bank", "Branding", "Pay", "Time off", "Checks", "Features", "Locked by PIN")
             for i, name in enumerate(order):
                 f[name].grid_configure(row=i, column=0)
             self.adv_outer.grid_configure(row=len(order), column=0, columnspan=1)
         else:
             for name, (r, c) in {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1),
-                                 "Checks": (1, 1), "Time off": (2, 1), "Locked by PIN": (3, 0)}.items():
+                                 "Checks": (1, 1), "Time off": (2, 1), "Locked by PIN": (3, 0),
+                                 "Features": (3, 1)}.items():
                 f[name].grid_configure(row=r, column=c)
             self.adv_outer.grid_configure(row=4, column=0, columnspan=2)
 
@@ -474,6 +482,7 @@ class CompanyTab(PinLockable, ttk.Frame):
             self.app.mark_dirty()
             self.app.refresh_all()
             self.app.refresh_branding()
+            self.app.apply_features()
             self.app.apply_pin_locks()
             self.app.status(f"Company settings updated.{self.app.save_hint()}")
         else:

@@ -43,7 +43,7 @@ year, next_check_number, pay_period, week_start, default_lunch_minutes, overtime
 overtime_multiplier, federal_withholding_pct, state_withholding_pct, social_security_pct,
 medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signature_line_text` (plus every later
 `models.Company` field, e.g. `pay_hold_back`, the branding keys, the time off keys `pto_hours` … `sick_paid`, and
-the Locked by PIN keys `lock_timecard`, `lock_employees` (default on), `lock_yearlog`, `lock_payroll`).
+the Features keys `use_timecards`, `use_payroll`, the Locked by PIN keys `lock_timecard`, `lock_employees` (default on), `lock_yearlog`, `lock_payroll`).
 
 Then two rows that aren't settings: `schema_version` (`storage.SCHEMA_VERSION`: 1 = 1.1.0–1.1.1, no marker;
 2 = 1.1.2; 3 = 1.2.0) and `app_version` (the version that saved the file). Bump `SCHEMA_VERSION` whenever a sheet or
@@ -322,3 +322,11 @@ stored (collect W-9s).
 - A locked tab locks again when you leave it, after 5 idle minutes, and with File > Lock PIN-Protected Tabs Now.
   Opening a workbook applies its settings (the open tab too); saving Company Settings applies them to the other tabs.
   Wrong-PIN count and the 30-second lockout are shared by every lock screen.
+
+## Features on/off (Company Settings)
+- `Company.use_timecards` (Time Card and Year Log tabs) and `Company.use_payroll` (Pay & Checks), both on by default
+  and for older workbooks. Off hides the tabs (`ttk.Notebook.hide`); nothing is deleted, and turning it back on shows
+  them in the same place. `App.tab_specs` is the registry: (tab, label, feature switch or None).
+- With time cards off, Pay & Checks pays salaried people every period (no hours, memo without hours) and notes that
+  hourly people aren't paid there. Setup asks "What does your business need?" and sets both switches in the first
+  workbook (`--no-timecards` / `--no-payroll` for a silent install).

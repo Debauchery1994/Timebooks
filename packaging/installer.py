@@ -14,7 +14,9 @@ Data holds the workbooks).
 
   Setup.exe                 interactive install
   Setup.exe --silent [--pin 1234] [--company "Acme LLC"] [--no-desktop] [--no-start-menu]
-                            install without UI (without --pin the app asks for a PIN on first use; --company
+                     [--no-timecards] [--no-payroll]
+                            install without UI (--no-timecards / --no-payroll turn those features off in the new
+                            workbook; without --pin the app asks for a PIN on first use; --company
                             creates this year's workbook in Documents\\TimeCard Pro unless one is already set up)
   Setup.exe --silent --portable E:\\   make a portable copy in E:\\TimeCard Pro Portable
   Setup.exe --update <TimeCardPro.exe> [--wait-pid N]
@@ -158,9 +160,11 @@ def remember_workbook(settings_dir: Path, workbook: Path, app_base: Path) -> Non
     os.replace(tmp, f)
 
 
-def create_workbook(company_name: str, settings_dir: Path, app_base: Path) -> Path:
+def create_workbook(company_name: str, settings_dir: Path, app_base: Path, use_timecards: bool = True,
+                    use_payroll: bool = True) -> Path:
     """Create this year's workbook for `company_name` in the default folder, which is created too (an existing
-    file with that name is kept, never overwritten), and make it the workbook the app opens first.
+    file with that name is kept, never overwritten), and make it the workbook the app opens first. `use_timecards`
+    / `use_payroll` are the answers to "What does your business need?" (Company Settings > Features).
     Call after installing, so a portable copy's marker is in place."""
     from timecard.models import Company
     from timecard.storage import TimecardBook
@@ -168,7 +172,8 @@ def create_workbook(company_name: str, settings_dir: Path, app_base: Path) -> Pa
     wb = planned_workbook(company_name, app_base, paths.is_portable(app_base))
     wb.parent.mkdir(parents=True, exist_ok=True)
     if not wb.exists():
-        TimecardBook.new(Company(company_name=company_name.strip(), year=date.today().year)).save(wb)
+        TimecardBook.new(Company(company_name=company_name.strip(), year=date.today().year,
+                                 use_timecards=use_timecards, use_payroll=use_payroll)).save(wb)
     remember_workbook(settings_dir, wb, app_base)
     return wb
 
@@ -384,6 +389,7 @@ def gui(mode: str) -> None:
     book_box = ttk.LabelFrame(frm, text="Timecard workbook", padding=10)
     book_box.pack(fill="x", pady=(12, 0))
     company_var, book_hint = tk.StringVar(), tk.StringVar()
+    want_timecards, want_payroll = tk.BooleanVar(value=True), tk.BooleanVar(value=True)
 
     pin_box = ttk.LabelFrame(frm, text="PIN (for Company Settings and any tabs you lock)", padding=10)
     pin_box.pack(fill="x", pady=(12, 0))
@@ -430,6 +436,12 @@ def gui(mode: str) -> None:
         ttk.Entry(book_box, textvariable=company_var, width=36).grid(row=0, column=1, sticky="w")
         ttk.Label(book_box, textvariable=book_hint, foreground="#555", justify="left").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(book_box, text="What does your business need? (You can change this later in Company Settings.)"
+                  ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 2))
+        ttk.Checkbutton(book_box, text="Time cards: track the hours people work", variable=want_timecards).grid(
+            row=3, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(book_box, text="Payroll checks: pay people and print checks", variable=want_payroll).grid(
+            row=4, column=0, columnspan=2, sticky="w")
         book_box.columnconfigure(1, weight=1)   # the long path line widens column 1, not the label column
         update_book_hint()
 
@@ -557,7 +569,8 @@ def gui(mode: str) -> None:
             messagebox.showerror(f"{APP_NAME} Setup", f"Installation failed:\n{exc}")
             return
         try:
-            book = keep_book or create_workbook(company_var.get(), target_settings_dir(), exe.parent)
+            book = keep_book or create_workbook(company_var.get(), target_settings_dir(), exe.parent,
+                                                use_timecards=want_timecards.get(), use_payroll=want_payroll.get())
             book_note = f"\n\nYour timecard workbook:\n{book}"
         except Exception as exc:  # noqa: BLE001 - the program itself is installed; say what to do instead
             book_note = (f"\n\nThe workbook could not be created ({exc}).\n"
@@ -608,7 +621,8 @@ def main() -> None:
             if "--pin" in sys.argv[:-1]:
                 security.set_pin(sys.argv[sys.argv.index("--pin") + 1])
         if mode != "uninstall" and _arg("--company") and not existing_workbook(settings, exe.parent):
-            create_workbook(_arg("--company"), settings, exe.parent)
+            create_workbook(_arg("--company"), settings, exe.parent, use_timecards="--no-timecards" not in args,
+                            use_payroll="--no-payroll" not in args)
     else:
         gui(mode)
 

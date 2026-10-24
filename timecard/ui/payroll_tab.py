@@ -257,7 +257,10 @@ class PayrollTab(PinLockable, ttk.Frame):
         notes = []
         elsewhere = [(e, self._hours_elsewhere(e.employee_id, p)) for e in no_hours]
         elsewhere = [(e, q) for e, q in elsewhere if q is not None]
-        if elsewhere:
+        if no_hours and not self.book.company.use_timecards:
+            notes.append("Time cards are turned off (Company Settings > Features), so hourly people aren't paid "
+                         "here: " + ", ".join(e.full_name for e in no_hours) + ".")
+        elif elsewhere:
             notes.append("No hours in this period for " + "; ".join(
                 f"{e.full_name} (has unpaid hours in {q[0]:%m/%d}-{q[1]:%m/%d})" for e, q in elsewhere)
                 + ". Choose that pay period above to pay them.")

@@ -70,9 +70,12 @@ class App(tk.Tk):
         self.yearlog_tab = YearLogTab(self.nb, self)
         self.payroll_tab = PayrollTab(self.nb, self)
         self.company_tab = CompanyTab(self.nb, self)
-        for tab, text in ((self.timecard_tab, "Time Card"), (self.employees_tab, "Employees"),
-                          (self.yearlog_tab, "Year Log"), (self.payroll_tab, "Pay & Checks"),
-                          (self.company_tab, "Company Settings")):
+        # The tab registry: (tab, label, the Company feature switch that shows it, or None for always shown).
+        self.tab_specs = ((self.timecard_tab, "Time Card", "use_timecards"), (self.employees_tab, "Employees", None),
+                          (self.yearlog_tab, "Year Log", "use_timecards"), (self.payroll_tab, "Pay & Checks",
+                                                                            "use_payroll"),
+                          (self.company_tab, "Company Settings", None))
+        for tab, text, _feature in self.tab_specs:
             self.nb.add(tab, text=f"  {text}  ")
         for tab in self.lockable_tabs:
             tab.init_pin_lock()
@@ -463,6 +466,7 @@ class App(tk.Tk):
         self.employees_tab.selected = None
         self.refresh_all(keep_selection=False)
         self.refresh_branding()
+        self.apply_features()
         self.apply_pin_locks(lock_current=True)
         if book.path:
             self.settings.add_recent(book.path)
@@ -509,6 +513,20 @@ class App(tk.Tk):
     # ----- PIN / idle lock
     def note_activity(self, _e=None) -> None:
         self._last_activity = _time.monotonic()
+
+    def apply_features(self) -> None:
+        """Show the tabs of the features the business uses (Company Settings > Features) and hide the rest; a hidden
+        tab keeps its data and comes back in the same place."""
+        if self.book is None:
+            return
+        for tab, _text, feature in self.tab_specs:
+            if feature is None or getattr(self.book.company, feature, True):
+                self.nb.add(tab)   # re-adding a hidden tab shows it again where it was
+            else:
+                self.nb.hide(tab)
+        sel = self.nb.select()
+        if not sel or str(self.nb.tab(sel, "state")) == "hidden":
+            self.nb.select(self.employees_tab)
 
     @property
     def lockable_tabs(self) -> tuple:
