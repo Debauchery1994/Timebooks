@@ -352,7 +352,8 @@ stored (collect W-9s).
   for the Vendors list (1.3.0). `Categories` sheet: the owner's list, seeded with the IRS Schedule C lines
   (`expenses.DEFAULT_CATEGORIES`); a category typed on an expense is added to it. Schema version 4.
 - Receipts are never stored in the workbook: `expenses.file_receipt` copies the picture/PDF to
-  `Receipts\<year>\<date> <vendor> <amount>.<ext>` next to the workbook (never overwriting; " (2)" etc.), and the
+  `Receipts\<year>\<vendor>\<date> <vendor> <amount>.<ext>` next to the workbook ("Unknown vendor" until the
+  vendor is known; correcting an expense's vendor, date or amount moves and renames its receipt to match) (never overwriting; " (2)" etc.), and the
   expense keeps that path relative to the workbook's folder. Deleting an expense keeps its receipt file. Backups also
   copy new receipt files to "<workbook> Receipts" in the backup folder (`backup.backup_receipts`).
 - The tab: Month / Category / Vendor filters, sortable columns, Add / Edit (double-click) / View Receipt / Delete,

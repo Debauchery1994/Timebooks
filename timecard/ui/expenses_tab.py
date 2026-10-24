@@ -603,6 +603,13 @@ class ExpensesTab(PinLockable, ttk.Frame):
                 if not messagebox.askyesno("Receipt", f"The receipt could not be attached:\n{exc}\n\nSave the "
                                            "expense without it? (Choose No to keep what you had.)", parent=self):
                     return
+        elif result.receipt_file and self.book.path is not None and (
+                (result.vendor, result.expense_date, result.amount) != (original.vendor, original.expense_date,
+                                                                        original.amount)):
+            try:   # vendor / date / amount corrected: keep the receipt in the matching vendor folder and name
+                result.receipt_file = expenses.refile_receipt(result, self.book.path)
+            except OSError as exc:
+                log.warning("Could not move receipt %s: %s", result.receipt_file, exc)
         if result.category not in self.book.categories:
             self.book.categories.append(result.category)
         repeats = dlg.w["repeats"].get()

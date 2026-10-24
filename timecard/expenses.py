@@ -1,8 +1,9 @@
 """Expenses and their receipts: categories, filing receipt files next to the workbook, filters and totals.
 
-Receipt files are never stored inside the .xlsx (it would grow huge and slow to save). They are copied into a
-`Receipts\\<year>` folder next to the workbook and the expense keeps the path relative to the workbook's folder, so
-the workbook and its receipts can move together (another folder, a USB drive, a backup).
+Receipt files are never stored inside the .xlsx (it would grow huge and slow to save). They are copied into
+`Receipts\\<year>\\<vendor>` next to the workbook and the expense keeps the path relative to the workbook's folder, so
+the workbook and its receipts can move together (another folder, a USB drive, a backup). When an expense's vendor,
+date or amount is corrected, its receipt is moved and renamed to match (`refile_receipt`).
 """
 from __future__ import annotations
 
@@ -36,27 +37,70 @@ def next_expense_id(expenses: list[Expense]) -> str:
     return f"X{max(nums, default=0) + 1:04d}"
 
 
+UNKNOWN_VENDOR = "Unknown vendor"   # folder for receipts the reader couldn't name (moved once the vendor is set)
+
+
+def _safe(text: str) -> str:
+    """Text Windows accepts in a file or folder name."""
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "", text).strip(" .")[:40]
+
+
 def receipt_name(e: Expense, suffix: str) -> str:
     """'2026-10-24 Home Depot 84.17.jpg' with characters Windows can't use in file names removed."""
-    vendor = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "", e.vendor).strip(" .")[:40] or "Receipt"
-    return f"{e.expense_date:%Y-%m-%d} {vendor} {e.amount:.2f}{suffix.lower()}"
+    return f"{e.expense_date:%Y-%m-%d} {_safe(e.vendor) or 'Receipt'} {e.amount:.2f}{suffix.lower()}"
+
+
+def receipt_folder(e: Expense, workbook: str | Path) -> Path:
+    """Receipts\\<year>\\<vendor> next to the workbook."""
+    return Path(workbook).parent / RECEIPTS_FOLDER / str(e.expense_date.year) / (_safe(e.vendor) or UNKNOWN_VENDOR)
+
+
+def _free_name(folder: Path, name: str) -> Path:
+    """folder/name, or 'name (2)', 'name (3)', ... so another receipt is never overwritten."""
+    target, n, stem, suffix = folder / name, 2, Path(name).stem, Path(name).suffix
+    while target.exists():
+        target = folder / f"{stem} ({n}){suffix}"
+        n += 1
+    return target
 
 
 def file_receipt(source: str | Path, e: Expense, workbook: str | Path) -> str:
-    """Copy `source` into Receipts\\<year> next to `workbook` and return the path to store on the expense (relative to
-    the workbook's folder). Never overwrites another receipt: adds ' (2)', ' (3)', ... when the name is taken."""
+    """Copy `source` into Receipts\\<year>\\<vendor> next to `workbook` and return the path to store on the expense
+    (relative to the workbook's folder). Never overwrites another receipt."""
     src = Path(source)
     if src.suffix.lower() not in RECEIPT_TYPES:
         raise ValueError(f"{src.name} isn't a picture or PDF. Attach a photo, a scan or a PDF of the receipt.")
     base = Path(workbook).parent
-    folder = base / RECEIPTS_FOLDER / str(e.expense_date.year)
+    folder = receipt_folder(e, workbook)
     folder.mkdir(parents=True, exist_ok=True)
-    name = receipt_name(e, src.suffix)
-    target, n = folder / name, 2
-    while target.exists():
-        target = folder / f"{Path(name).stem} ({n}){src.suffix.lower()}"
-        n += 1
+    target = _free_name(folder, receipt_name(e, src.suffix))
     shutil.copy2(src, target)
+    return str(target.relative_to(base))
+
+
+def refile_receipt(e: Expense, workbook: str | Path) -> str:
+    """After the vendor, date or amount of `e` changed: move its receipt to the matching Receipts\\<year>\\<vendor>
+    folder and name, and return the new relative path. A receipt outside the workbook's Receipts folder, or a missing
+    file, is left where it is (the stored path is returned unchanged)."""
+    base = Path(workbook).parent
+    current = receipt_path(e, workbook)
+    receipts = (base / RECEIPTS_FOLDER).resolve()
+    if current is None or not current.is_file() or receipts not in current.resolve().parents:
+        return e.receipt_file
+    folder = receipt_folder(e, workbook)
+    wanted = receipt_name(e, current.suffix)
+    if current.parent.resolve() == folder.resolve() and (current.name == wanted or current.stem.startswith(
+            Path(wanted).stem + " (")):
+        return e.receipt_file   # already in place
+    folder.mkdir(parents=True, exist_ok=True)
+    target = _free_name(folder, wanted)
+    old_folder = current.parent
+    shutil.move(str(current), str(target))
+    try:
+        if old_folder.resolve() != receipts and not any(old_folder.iterdir()):
+            old_folder.rmdir()   # e.g. an emptied "Unknown vendor" folder
+    except OSError:
+        pass
     return str(target.relative_to(base))
 
 

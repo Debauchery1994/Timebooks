@@ -55,7 +55,7 @@ class ReceiptFilingTests(unittest.TestCase):
             photo.write_bytes(b"jpeg")
             e = _exp(1, date(2026, 10, 24), 'Home "Depot"', "Supplies", "84.17")
             rel = expenses.file_receipt(photo, e, wb)
-            self.assertEqual(rel, str(Path("Receipts") / "2026" / "2026-10-24 Home Depot 84.17.jpg"))
+            self.assertEqual(rel, str(Path("Receipts") / "2026" / "Home Depot" / "2026-10-24 Home Depot 84.17.jpg"))
             self.assertEqual((wb.parent / rel).read_bytes(), b"jpeg")
             rel2 = expenses.file_receipt(photo, e, wb)
             self.assertTrue(rel2.endswith("84.17 (2).jpg"))
@@ -63,6 +63,24 @@ class ReceiptFilingTests(unittest.TestCase):
             self.assertEqual(expenses.receipt_path(e, wb), wb.parent / rel)
             with self.assertRaises(ValueError):
                 expenses.file_receipt(Path(d) / "notes.txt", e, wb)
+
+    def test_a_corrected_vendor_moves_the_receipt_to_its_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            wb = Path(d) / "Acme 2026.xlsx"
+            photo = Path(d) / "scan.png"
+            photo.write_bytes(b"png")
+            e = _exp(1, date(2026, 10, 24), "", "", "0.00")   # the reader couldn't read it
+            e.receipt_file = expenses.file_receipt(photo, e, wb)
+            self.assertIn("Unknown vendor", e.receipt_file)
+            e.vendor, e.amount = "Ace Hardware", D("42.10")      # corrected on the review screen
+            e.receipt_file = expenses.refile_receipt(e, wb)
+            self.assertEqual(e.receipt_file, str(Path("Receipts") / "2026" / "Ace Hardware" /
+                                                 "2026-10-24 Ace Hardware 42.10.png"))
+            self.assertEqual((Path(d) / e.receipt_file).read_bytes(), b"png")
+            self.assertFalse((Path(d) / "Receipts" / "2026" / "Unknown vendor").exists())   # emptied folder removed
+            self.assertEqual(expenses.refile_receipt(e, wb), e.receipt_file)                 # already in place
+            outside = _exp(2, date(2026, 10, 24), "X", "", "1.00", receipt_file=str(photo))
+            self.assertEqual(expenses.refile_receipt(outside, wb), str(photo))               # never moved
 
     def test_backups_copy_new_receipts_only(self) -> None:
         with tempfile.TemporaryDirectory() as d:
