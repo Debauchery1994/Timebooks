@@ -55,28 +55,48 @@ def settings_dir() -> Path:
     return installed_settings_dir()
 
 
-def installed_settings_dir() -> Path:
-    """%APPDATA%\\TimeBooks, first copying %APPDATA%\\TimeCardPro into it if this computer still has only that."""
+def _appdata() -> Path:
+    return Path(os.environ.get("APPDATA") or Path.home())
+
+
+def installed_settings_dir(migrate: bool = True) -> Path:
+    """%APPDATA%\\TimeBooks. With `migrate`, first copies %APPDATA%\\TimeCardPro into it if this computer still
+    has only that (once per run). Setup passes migrate=False until the owner actually installs."""
     global _migrated
-    appdata = Path(os.environ.get("APPDATA") or Path.home())
-    new = appdata / SETTINGS_FOLDER
-    if not _migrated:
+    new = _appdata() / SETTINGS_FOLDER
+    if migrate and not _migrated:
         _migrated = True
-        migrate_settings(appdata / OLD_SETTINGS_FOLDER, new)
+        migrate_settings(_appdata() / OLD_SETTINGS_FOLDER, new)
     return new
 
 
+def current_settings_dir() -> Path:
+    """Where this computer's installed settings are right now, without copying anything: %APPDATA%\\TimeBooks, or the
+    TimeCard Pro folder while only that one has a PIN (Setup reads it to keep the PIN and find the workbook)."""
+    new, old = _appdata() / SETTINGS_FOLDER, _appdata() / OLD_SETTINGS_FOLDER
+    return old if not (new / "pin.json").exists() and (old / "pin.json").exists() else new
+
+
 def migrate_settings(old: Path, new: Path) -> bool:
-    """Copy the TimeCard Pro settings folder (PIN, recent files, backup choices, log) to the TimeBooks one, once:
-    only when `old` exists and `new` has no PIN or settings yet. The old folder is left as it was. True if copied."""
-    if not old.is_dir() or (new / "pin.json").exists() or (new / "settings.json").exists():
+    """Copy the TimeCard Pro settings folder (PIN, recent files, backup choices, log) into the TimeBooks one until it
+    has a PIN. Never replaces a file already there, and the old folder is left as it was. The copy goes to a temporary
+    folder first and pin.json is moved in last, so an interrupted copy is simply finished next time. True if copied."""
+    if not (old / "pin.json").exists() or (new / "pin.json").exists():
         return False
+    log = logging.getLogger("timecard")
+    tmp = new.with_name(new.name + ".copying")
     try:
-        shutil.copytree(old, new, dirs_exist_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(old, tmp)
+        new.mkdir(parents=True, exist_ok=True)
+        for f in sorted(tmp.iterdir(), key=lambda f: f.name == "pin.json"):   # pin.json last
+            if not (new / f.name).exists():
+                os.replace(f, new / f.name)
+        shutil.rmtree(tmp, ignore_errors=True)
     except OSError as exc:
-        logging.getLogger("timecard").warning("Could not copy settings from %s to %s: %s", old, new, exc)
+        log.warning("Could not copy settings from %s to %s: %s", old, new, exc)
         return False
-    logging.getLogger("timecard").info("Copied settings from %s to %s (renamed to TimeBooks)", old, new)
+    log.info("Copied settings from %s to %s (renamed to TimeBooks)", old, new)
     return True
 
 

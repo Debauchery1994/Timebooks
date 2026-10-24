@@ -186,9 +186,11 @@ def use_settings_dir(folder: Path) -> None:
     os.environ[paths.SETTINGS_ENV] = str(folder)
 
 
-def installed_settings_dir() -> Path:
-    """%APPDATA%\\TimeBooks (a TimeCard Pro settings folder, PIN included, is copied there first)."""
-    return paths.installed_settings_dir()
+def installed_settings_dir(migrate: bool = True) -> Path:
+    """%APPDATA%\\TimeBooks; when installing (`migrate`), a TimeCard Pro settings folder, PIN included, is copied
+    there first. Only installing or updating copies it: not opening Setup, choosing portable, cancelling or
+    uninstalling."""
+    return paths.installed_settings_dir(migrate=migrate)
 
 
 def app_env() -> dict:
@@ -358,7 +360,7 @@ def gui(mode: str) -> None:
     frm.pack(fill="both", expand=True)
 
     if mode == "uninstall":
-        use_settings_dir(installed_settings_dir())
+        use_settings_dir(installed_settings_dir(migrate=False))
         if messagebox.askyesno(f"{APP_NAME} Setup",
                                f"Remove {APP_NAME} from this computer?\n\n"
                                "Your timecard workbooks (.xlsx) will NOT be deleted."):
@@ -414,7 +416,7 @@ def gui(mode: str) -> None:
 
     def target_settings_dir() -> Path | None:
         if kind.get() == "computer":
-            return installed_settings_dir()
+            return paths.current_settings_dir()   # read only: copied from TimeCard Pro when Install is clicked
         if not drive_var.get().strip():
             return None
         return paths.portable_data_dir(portable_target(drive_var.get().strip())) / "Settings"
@@ -546,6 +548,9 @@ def gui(mode: str) -> None:
                 messagebox.showerror(f"{APP_NAME} Setup", problem)
                 return
         build_pin_box()  # make sure the PIN check below matches the folder actually chosen
+        if not portable:
+            # installing on this computer: copy TimeCard Pro settings (PIN) now, if any, and use the TimeBooks folder
+            use_settings_dir(installed_settings_dir())
         keep_pin, keep_recovery, keep_book = state["keep_pin"], state["keep_recovery"], state["keep_book"]
         problem = None
         if not keep_book and not company_var.get().strip():

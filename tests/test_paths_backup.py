@@ -43,6 +43,28 @@ class PortablePathTests(unittest.TestCase):
         self.assertFalse(paths.migrate_settings(old, new))   # never copied over again
         self.assertEqual((new / "pin.json").read_text(), "changed in TimeBooks")
 
+    def test_an_interrupted_copy_is_finished_without_replacing_anything(self) -> None:
+        old, new = self.appdata / "TimeCardPro", self.appdata / "TimeBooks"
+        old.mkdir(parents=True)
+        (old / "pin.json").write_text("pin")
+        (old / "settings.json").write_text("old settings")
+        new.mkdir()
+        (new / "settings.json").write_text("copied before the interruption")   # no pin.json yet
+        self.assertTrue(paths.migrate_settings(old, new))
+        self.assertEqual((new / "pin.json").read_text(), "pin")
+        self.assertEqual((new / "settings.json").read_text(), "copied before the interruption")
+        self.assertFalse((self.appdata / "TimeBooks.copying").exists())
+
+    def test_setup_reads_old_settings_without_copying_until_it_installs(self) -> None:
+        old = self.appdata / "TimeCardPro"
+        old.mkdir(parents=True)
+        (old / "pin.json").write_text("pin")
+        self.assertEqual(paths.current_settings_dir(), old)   # Setup sees the PIN where it is
+        self.assertEqual(paths.installed_settings_dir(migrate=False), self.appdata / "TimeBooks")
+        self.assertFalse((self.appdata / "TimeBooks").exists())   # opening Setup / uninstalling copies nothing
+        paths.installed_settings_dir()   # installing
+        self.assertEqual(paths.current_settings_dir(), self.appdata / "TimeBooks")
+
     def test_folders_the_owner_already_has_keep_their_old_names(self) -> None:
         parent = Path(self._tmp.name) / "Docs"
         self.assertEqual(paths.kept_folder(parent, "TimeBooks", "TimeCard Pro"), parent / "TimeBooks")

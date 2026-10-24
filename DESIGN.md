@@ -337,6 +337,8 @@ stored (collect W-9s).
   `%LOCALAPPDATA%\Programs\TimeBooks`, settings in `%APPDATA%\TimeBooks`. The Python package stays `timecard`.
 - No in-place upgrade from TimeCard Pro: 1.2.0 was only ever on the owner's PC, which uninstalls it and installs 1.3.0.
   What carries over (`timecard.paths`): `%APPDATA%\TimeCardPro` (PIN, recent files, last workbook) is copied to
-  `%APPDATA%\TimeBooks` the first time settings are read, only when the new folder has no PIN or settings yet, and the
-  old folder is left alone. Folders the owner already has keep being used (`paths.kept_folder`): Documents\TimeCard
+  `%APPDATA%\TimeBooks` (temporary folder first, `pin.json` moved in last, existing files never replaced; an
+  interrupted copy is finished next time) when the app first reads settings or Setup installs on this computer. Setup
+  only reads the old folder until Install is clicked: choosing portable, cancelling or uninstalling copies nothing.
+  The old folder is left alone. Folders the owner already has keep being used (`paths.kept_folder`): Documents\TimeCard
   Pro for workbooks, "TimeCard Pro Backups" in a backup folder, "TimeCard Pro Output" next to a workbook.
