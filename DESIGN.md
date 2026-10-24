@@ -220,3 +220,16 @@ stored (collect W-9s).
   (`ink_color` falls back to near-black if the color is too light to read on paper). Never on the check face.
 - `logo_on_checks`: voucher stubs; the check face only on blank stock (preprinted QuickBooks checks are untouched).
   `logo_on_reports`: time cards, register, Checks-to-Write list, annual statements.
+
+## Updates (`updates.py`, installer `--update`)
+- Help → **Check for Updates…**, plus "Check for updates at startup" (default on; frozen builds only, at most once a
+  day, silent unless a newer version that wasn't skipped exists; errors only logged).
+- Source of truth: `GET https://api.github.com/repos/Debauchery1994/Timebooks/releases/latest` (anonymous; the repo is
+  public). Tag `vX.Y.Z` compared numerically with `__version__`; asset `TimeCardPro-Setup.exe`.
+- Dialog: version, release notes, View on GitHub, **Download and Install / Skip This Version / Later**.
+- Download only from `https://github.com/<repo>/releases/download/…` (redirects to GitHub asset hosts only); size
+  and GitHub's `sha256` asset digest are verified before running. Installed copies download to `%TEMP%\TimeCardPro-Update`,
+  portable copies to `Data\Updates` on the drive.
+- The app asks to save, starts `Setup.exe --update <TimeCardPro.exe> --wait-pid <pid>` and closes. The installer waits
+  for that process, updates the same copy (portable in place, `Data` untouched; installed copy keeps whichever
+  shortcuts exist), retries while files are locked, then restarts the app. Nothing about the user is sent.

@@ -15,6 +15,9 @@ Data holds the workbooks).
   Setup.exe --silent [--pin 1234] [--no-desktop] [--no-start-menu]
                             install without UI (without --pin the app asks for a PIN on first use)
   Setup.exe --silent --portable E:\\   make a portable copy in E:\\TimeCard Pro Portable
+  Setup.exe --update <TimeCardPro.exe> [--wait-pid N]
+                            started by the app's Check for Updates: waits for the app to close, updates that copy
+                            (installed or portable, keeping shortcut choices, PIN and settings) and restarts it
   Uninstall.exe --uninstall remove (Uninstall.exe is a copy of Setup.exe placed in the install dir)
 """
 from __future__ import annotations
@@ -25,15 +28,17 @@ import subprocess
 import sys
 import ctypes
 import tempfile
+import threading
+import time
 import winreg
 import zipfile
 from pathlib import Path
 
-from timecard import paths, security
+from timecard import __version__, paths, security
 
 APP_NAME = "TimeCard Pro"
 APP_EXE = "TimeCardPro.exe"
-VERSION = "1.0.0"
+VERSION = __version__
 PUBLISHER = "TimeCard Pro"
 REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\TimeCardPro"
 INSTALL_DIR = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "TimeCardPro"
@@ -174,6 +179,97 @@ def install_portable(target: Path) -> Path:
     for sub in ("Workbooks", "Settings"):
         (paths.portable_data_dir(target) / sub).mkdir(parents=True, exist_ok=True)
     return target / APP_EXE
+
+
+def wait_for_exit(pid: int, timeout_s: float = 120) -> bool:
+    """Wait for process `pid` to end (True), or give up after timeout_s (False)."""
+    synchronize, wait_object_0 = 0x00100000, 0
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(synchronize, False, pid)
+    if not handle:
+        return True  # already gone
+    try:
+        return k32.WaitForSingleObject(handle, int(timeout_s * 1000)) == wait_object_0
+    finally:
+        k32.CloseHandle(handle)
+
+
+def update(app_exe: Path, retries: int = 10, delay_s: float = 1.0) -> Path:
+    """Update the copy `app_exe` belongs to: a portable copy in place, otherwise the installed copy
+    (keeping whichever shortcuts exist). Retries while Windows still has the old files locked."""
+    folder = Path(app_exe).resolve().parent
+    portable = paths.is_portable(folder)
+    use_settings_dir(paths.portable_data_dir(folder) / "Settings" if portable else installed_settings_dir())
+    for attempt in range(retries):
+        try:
+            return install_portable(folder) if portable else install(DESKTOP.exists(), START_MENU.exists())
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay_s)
+    raise AssertionError("unreachable")
+
+
+def _arg(name: str) -> str | None:
+    """Value following `name` on the command line, or None."""
+    argv = sys.argv[1:]
+    return argv[argv.index(name) + 1] if name in argv[:-1] else None
+
+
+def update_gui(app_exe: Path, wait_pid: int | None) -> None:
+    """Small 'Updating…' window around update(); restarts the app when done."""
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    root = tk.Tk()
+    root.title(f"{APP_NAME} Update")
+    root.resizable(False, False)
+    try:
+        root.iconbitmap(str(resource("timecard.ico")))
+    except tk.TclError:
+        pass
+    frm = ttk.Frame(root, padding=20)
+    frm.pack(fill="both", expand=True)
+    msg = tk.StringVar(value=f"Waiting for {APP_NAME} to close…")
+    ttk.Label(frm, textvariable=msg, width=46).pack(anchor="w")
+    bar = ttk.Progressbar(frm, mode="indeterminate", length=320)
+    bar.pack(fill="x", pady=(10, 0))
+    bar.start(12)
+    root.update_idletasks()
+    root.geometry(f"+{(root.winfo_screenwidth() - root.winfo_reqwidth()) // 2}"
+                  f"+{(root.winfo_screenheight() - root.winfo_reqheight()) // 3}")
+    result: dict = {}
+
+    def work() -> None:
+        try:
+            if wait_pid and not wait_for_exit(wait_pid):
+                raise RuntimeError(f"{APP_NAME} did not close. Close it and run the update again.")
+            result["stage"] = f"Installing version {VERSION}…"
+            result["exe"] = update(app_exe)
+        except Exception as exc:  # noqa: BLE001 - shown to the user
+            result["error"] = exc
+
+    def poll() -> None:
+        if "stage" in result:
+            msg.set(result.pop("stage"))
+        if worker.is_alive():
+            root.after(150, poll)
+            return
+        bar.stop()
+        if "error" in result:
+            messagebox.showerror(f"{APP_NAME} Update", f"The update could not be installed:\n{result['error']}\n\n"
+                                 "Your workbooks and settings were not changed.", parent=root)
+            root.destroy()
+            return
+        exe = result["exe"]
+        env = {k: v for k, v in os.environ.items() if k != "TIMECARDPRO_SETTINGS_DIR"}
+        subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
+        root.destroy()
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    root.after(150, poll)
+    root.mainloop()
 
 
 def gui(mode: str) -> None:
@@ -384,7 +480,10 @@ def gui(mode: str) -> None:
 def main() -> None:
     args = set(sys.argv[1:])
     mode = "uninstall" if "--uninstall" in args else "install"
-    if "--silent" in args:
+    if "--update" in args:
+        pid = _arg("--wait-pid")
+        update_gui(Path(_arg("--update") or INSTALL_DIR / APP_EXE), int(pid) if pid and pid.isdigit() else None)
+    elif "--silent" in args:
         if mode == "uninstall":
             uninstall()
         elif "--portable" in sys.argv[:-1]:
