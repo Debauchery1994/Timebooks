@@ -75,7 +75,11 @@ class PhoneUploadServer:
         self.host = host or local_ip()
         server = self
 
+        self.stopped = False
+
         class Handler(BaseHTTPRequestHandler):
+            timeout = 30   # a phone that stalls mid-send doesn't hold the connection open
+
             def log_message(self, *args) -> None:   # no console output
                 pass
 
@@ -105,7 +109,11 @@ class PhoneUploadServer:
                 if length <= 0 or length > MAX_UPLOAD:
                     self._page("That was too big to send at once. Send fewer photos at a time.", 413)
                     return
-                files = save_parts(self.headers.get("Content-Type", ""), self.rfile.read(length), server.dest)
+                body = self.rfile.read(length)
+                if server.stopped:   # the window closed while this was sending: don't leave a file with no draft
+                    self._page("TimeBooks stopped receiving. Open From my phone again and resend.", 503)
+                    return
+                files = save_parts(self.headers.get("Content-Type", ""), body, server.dest)
                 for f in files:
                     on_file(f)
                 self._page(f"Sent {len(files)} receipt{'s' if len(files) != 1 else ''}. Take more, or close this page."
@@ -124,6 +132,9 @@ class PhoneUploadServer:
         return self
 
     def stop(self) -> None:
+        if self.stopped:
+            return
+        self.stopped = True
         self.httpd.shutdown()
         self.httpd.server_close()
 

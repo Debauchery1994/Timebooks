@@ -21,7 +21,7 @@ _MONTH_DAY = re.compile(r"^(\d{1,2})/(\d{1,2})$")   # statements often print 10/
 _AMOUNT = re.compile(r"^\(?-?\$?\s*-?[\d,]*\d\.\d{2}\)?-?$")
 _MONEY_IN_WORDS = re.compile(
     r"\b(DEPOSIT|CREDIT|REFUND|INTEREST|TRANSFER FROM|PAYMENT RECEIVED|ZELLE FROM|DIRECT DEP)\b", re.I)
-_BALANCE_ROW = re.compile(r"\b(BEGINNING|ENDING|OPENING|CLOSING|PREVIOUS|NEW|STARTING)\s+BALANCE\b", re.I)
+_BALANCE_ROW = re.compile(r"\bBALANCE\b", re.I)   # BEGINNING / DAILY / FORWARD ... BALANCE: never a transaction
 
 
 @dataclass
@@ -30,6 +30,7 @@ class BankLine:
     description: str
     amount: Decimal          # negative = money out (a purchase, a check), positive = money in (a deposit)
     source: str = ""         # the statement text it came from, for checking
+    sure: bool = True        # False when in/out was only guessed from the wording (not offered as a draft by default)
 
 
 @dataclass
@@ -86,26 +87,31 @@ def read_csv(path: str | Path) -> tuple[list[str], list[list[str]]]:
 
 
 def guess_columns(headers: list[str]) -> dict[str, int]:
-    """Which column is the date, description and amount (or debit and credit), from the header names."""
+    """Which column is the date, description and amount (or debit and credit), from the header names. Money columns
+    are recognised before the description, and card / account number columns are never taken for money."""
     out: dict[str, int] = {}
-    for i, h in enumerate(h.lower() for h in headers):
+    for i, h in enumerate(h.lower().strip() for h in headers):
+        number_col = any(w in h for w in ("card", "number", "#")) or h.endswith(" no") or h.endswith(" no.")
         if "date" in h and "date" not in out:
             out["date"] = i
-        elif any(w in h for w in ("description", "payee", "memo", "details", "name", "transaction")) \
-                and "description" not in out and "type" not in h:
-            out["description"] = i
+        elif number_col:
+            continue
         elif any(w in h for w in ("debit", "withdrawal", "money out", "paid out")) and "debit" not in out:
             out["debit"] = i
         elif any(w in h for w in ("credit", "deposit", "money in", "paid in")) and "credit" not in out:
             out["credit"] = i
         elif "amount" in h and "amount" not in out:
             out["amount"] = i
+        elif any(w in h for w in ("description", "payee", "memo", "details", "name", "transaction")) \
+                and "description" not in out and "type" not in h:
+            out["description"] = i
     return out
 
 
-def lines_from_csv(rows: list[list[str]], cols: dict[str, int]) -> list[BankLine]:
+def lines_from_csv(rows: list[list[str]], cols: dict[str, int], out_is_positive: bool = False) -> list[BankLine]:
     """Bank lines from CSV rows with the chosen columns; rows without a readable date and amount are skipped.
-    Separate debit/credit columns: debits are money out. A single amount column keeps its sign."""
+    Separate debit/credit columns: debits are money out. A single amount column keeps its sign, flipped when the
+    bank shows purchases as positive (`out_is_positive`, common for card exports)."""
     out = []
     for r in rows:
         def cell(name: str) -> str:
@@ -116,6 +122,7 @@ def lines_from_csv(rows: list[list[str]], cols: dict[str, int]) -> list[BankLine
             continue
         if "amount" in cols:
             amt = parse_amount(cell("amount"))
+            amt = -amt if amt is not None and out_is_positive else amt
         else:
             debit, credit = parse_amount(cell("debit")), parse_amount(cell("credit"))
             amt = -abs(debit) if debit else (abs(credit) if credit else None)
@@ -158,15 +165,16 @@ def lines_from_text(text_lines: list[str], year: int | None = None) -> list[Bank
             continue
         amount = abs(amounts[0])
         balance = amounts[1] if len(amounts) == 2 else None
+        sure = True
         if balance is not None and prev_balance is not None and abs(abs(balance - prev_balance) - amount) < CENT:
             signed = amount if balance > prev_balance else -amount
         elif amounts[0] < 0:
             signed = amounts[0]
         else:
-            signed = amount if _MONEY_IN_WORDS.search(desc) else -amount
+            signed, sure = (amount if _MONEY_IN_WORDS.search(desc) else -amount), False
         if balance is not None:
             prev_balance = balance
-        out.append(BankLine(d, desc, signed, raw.strip()))
+        out.append(BankLine(d, desc, signed, raw.strip(), sure))
     return out
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .. import bank, expenses
@@ -30,8 +31,9 @@ class BankImportDialog(ModalDialog):
         self.is_csv = self.path.suffix.lower() == ".csv"
         if self.is_csv:
             self.headers, self.rows = bank.read_csv(self.path)
-            saved = (self.app.settings.data.get("bank_columns") or {}).get("|".join(self.headers))
-            cols = saved or bank.guess_columns(self.headers)
+            saved = (self.app.settings.data.get("bank_columns") or {}).get("|".join(self.headers)) or {}
+            cols = {k: v for k, v in saved.items() if k in bank.FIELDS} or bank.guess_columns(self.headers)
+            self.v_flip = tk.BooleanVar(value=bool(saved.get("out_is_positive")))
             pick = ttk.Frame(f)
             pick.pack(fill="x", pady=(0, 8))
             ttk.Label(pick, text="Columns:").pack(side="left")
@@ -42,6 +44,8 @@ class BankImportDialog(ModalDialog):
                 cb.bind("<<ComboboxSelected>>", lambda e: self.reload())
                 cb.pack(side="left")
                 self.pickers[field] = cb
+            ttk.Checkbutton(pick, text="Money out is positive", variable=self.v_flip,
+                            command=self.reload).pack(side="left", padx=(12, 0))
         cols = (("date", "Date", 90), ("desc", "Description", 320), ("amount", "Amount", 100),
                 ("match", "Match", 220), ("add", "Add", 60))
         self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=16)
@@ -65,7 +69,7 @@ class BankImportDialog(ModalDialog):
     def reload(self) -> None:
         try:
             if self.is_csv:
-                lines = bank.lines_from_csv(self.rows, self._columns())
+                lines = bank.lines_from_csv(self.rows, self._columns(), self.v_flip.get())
             else:
                 self.app.config(cursor="watch")
                 self.app.update_idletasks()
@@ -76,7 +80,10 @@ class BankImportDialog(ModalDialog):
         finally:
             self.app.config(cursor="")
         self.matches = bank.match_lines(lines, self.book.expenses)
-        self.add = {i for i, m in enumerate(self.matches) if m.status == "new"}
+        # offered as drafts: money out not in expenses, read for sure, in this workbook's year
+        year = self.book.company.year
+        self.add = {i for i, m in enumerate(self.matches)
+                    if m.status == "new" and m.line.sure and m.line.line_date.year == year}
         self.fill()
 
     def fill(self) -> None:
@@ -84,6 +91,10 @@ class BankImportDialog(ModalDialog):
         for i, m in enumerate(self.matches):
             ln = m.line
             match = LABELS[m.status] + (f": {m.expense.vendor} {m.expense.expense_date:%m/%d}" if m.expense else "")
+            if not ln.sure:
+                match += " (in/out guessed)"
+            if ln.line_date.year != self.book.company.year:
+                match += f" ({ln.line_date.year})"
             self.tree.insert("", "end", iid=str(i), tags=("former",) if m.status == "money in" else (),
                              values=(f"{ln.line_date:%m/%d/%Y}", ln.description,
                                      fmt_money(ln.amount) if ln.amount >= 0 else f"-{fmt_money(-ln.amount)}", match,
@@ -115,11 +126,6 @@ class BankImportDialog(ModalDialog):
             self.app.status(f"Saved {len(self.matches)} statement rows to {Path(path).name}")
 
     def apply(self) -> bool:
-        if self.is_csv and self.headers:
-            saved = dict(self.app.settings.data.get("bank_columns") or {})
-            saved["|".join(self.headers)] = self._columns()
-            self.app.settings.data["bank_columns"] = saved
-            self.app.settings.save()
         now = datetime.now().isoformat(timespec="seconds")
         added = 0
         for i in sorted(self.add):
@@ -133,6 +139,12 @@ class BankImportDialog(ModalDialog):
             added += 1
         if added and not messagebox.askyesno("Bank Statement", f"Add {added} draft expense(s)? Review and approve "
                                              "them on the Expenses tab.", parent=self):
+            del self.book.expenses[-added:]
             return False
+        if self.is_csv and self.headers:   # remember this bank's columns once the import is accepted
+            saved = dict(self.app.settings.data.get("bank_columns") or {})
+            saved["|".join(self.headers)] = {**self._columns(), "out_is_positive": int(self.v_flip.get())}
+            self.app.settings.data["bank_columns"] = saved
+            self.app.settings.save()
         self.result = added
         return True

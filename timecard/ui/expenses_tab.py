@@ -425,14 +425,20 @@ class PhoneUploadDialog(tk.Toplevel):
         self.v_count.pack(pady=(4, 8))
         ttk.Button(f, text="Done", style="Accent.TButton", command=self.close).pack()
         self.protocol("WM_DELETE_WINDOW", self.close)
+        self.bind("<Destroy>", lambda e: self.server.stop() if e.widget is self and self.server else None)
         self.after(500, self._poll)
 
     def _poll(self) -> None:
         while not self.arrived.empty():
-            self.on_receipt(self.arrived.get())
+            path = self.arrived.get()
+            try:
+                self.on_receipt(path)
+            except Exception as exc:  # noqa: BLE001 - one unreadable photo must not stop the others
+                log.warning("Phone photo %s could not be added: %s", path, exc)
+                continue
             self.count += 1
             self.v_count.configure(text=f"{self.count} receipt{'s' if self.count != 1 else ''} received as drafts")
-        if self.winfo_exists():
+        if self.winfo_exists() and self.server is not None:
             self.after(500, self._poll)
 
     def close(self) -> None:
@@ -440,7 +446,10 @@ class PhoneUploadDialog(tk.Toplevel):
             self.server.stop()
             self.server = None
             while not self.arrived.empty():   # anything that arrived in the last moment
-                self.on_receipt(self.arrived.get())
+                try:
+                    self.on_receipt(self.arrived.get())
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Phone photo could not be added: %s", exc)
         self.destroy()
 
     def show(self) -> None:

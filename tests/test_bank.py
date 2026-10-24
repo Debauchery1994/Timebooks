@@ -61,6 +61,22 @@ class StatementTextTests(unittest.TestCase):
         self.assertEqual([ln.amount for ln in lines], [D("-84.17"), D("500.00")])
 
 
+class ReviewFixTests(unittest.TestCase):
+    def test_any_balance_row_is_not_a_transaction_and_guesses_are_marked(self) -> None:
+        lines = bank.lines_from_text(["10/01 BALANCE FORWARD 1,000.00", "10/02 DAILY BALANCE 1,000.00",
+                                      "10/03 HOME DEPOT 84.17 915.83", "10/05 SOMETHING 20.00"], 2026)
+        self.assertEqual([(ln.description, ln.amount, ln.sure) for ln in lines],
+                         [("HOME DEPOT", D("-84.17"), True), ("SOMETHING", D("-20.00"), False)])
+
+    def test_column_guesses_and_positive_purchases(self) -> None:
+        self.assertEqual(bank.guess_columns(["Date", "Transaction Amount", "Description"]),
+                         {"date": 0, "amount": 1, "description": 2})
+        self.assertNotIn("debit", bank.guess_columns(["Date", "Debit Card No", "Amount", "Payee"]))
+        lines = bank.lines_from_csv([["10/03/2026", "AMAZON", "25.00"]], {"date": 0, "description": 1, "amount": 2},
+                                    out_is_positive=True)
+        self.assertEqual(lines[0].amount, D("-25.00"))
+
+
 class MatchTests(unittest.TestCase):
     def test_matched_possible_new_and_money_in(self) -> None:
         exp = [Expense("X0001", date(2026, 10, 2), vendor="Home Depot", amount=D("84.17")),
