@@ -90,13 +90,18 @@ class TimeEntry:
     out2: time | None = None
     lunch_deduct_min: int = 0
     notes: str = ""
+    # Salaried people: the day's hours typed directly (replaces the punches when set), and what kind of hours they
+    # are. PTO / Holiday / Sick hours are leave, not hours worked.
+    salary_hours: Decimal | None = None
+    hours_type: str = "Worked"   # Worked | PTO | Holiday | Sick
 
     @property
     def key(self) -> tuple[str, date]:
         return (self.employee_id, self.work_date)
 
     def is_empty(self) -> bool:
-        return not any((self.in1, self.out1, self.in2, self.out2, self.lunch_deduct_min, self.notes))
+        return not any((self.in1, self.out1, self.in2, self.out2, self.lunch_deduct_min, self.notes)) \
+            and self.salary_hours is None
 
 
 @dataclass

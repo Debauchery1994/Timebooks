@@ -103,11 +103,53 @@ def pair_hours(t_in: time | None, t_out: time | None) -> Decimal:
     return _hours2(Decimal(_pair_seconds(t_in, t_out)) / 3600)
 
 
-def day_hours(e: TimeEntry) -> Decimal:
-    """Sum of complete pairs minus the lunch deduct, never negative, 2 dp."""
+HOURS_TYPES = ("Worked", "PTO", "Holiday", "Sick")
+
+
+def hours_type(e: TimeEntry) -> str:
+    """The entry's hours type, normalised to one of HOURS_TYPES ("Worked" when blank or unknown)."""
+    t = (e.hours_type or "").strip().lower()
+    return next((h for h in HOURS_TYPES if h.lower() == t), "Worked")
+
+
+def is_leave(e: TimeEntry) -> bool:
+    return hours_type(e) != "Worked"
+
+
+def entry_hours(e: TimeEntry) -> Decimal:
+    """All hours on the day: the salary hours typed in when set, else complete pairs minus the lunch deduct.
+    Never negative, 2 dp."""
+    if e.salary_hours is not None:
+        return _hours2(max(Decimal(str(e.salary_hours)), ZERO))
     secs = _pair_seconds(e.in1, e.out1) + _pair_seconds(e.in2, e.out2)
     secs -= int(e.lunch_deduct_min or 0) * 60
     return _hours2(Decimal(max(secs, 0)) / 3600)
+
+
+def day_hours(e: TimeEntry) -> Decimal:
+    """Hours WORKED on the day (what pay, overtime, the Year Log and statements count): entry_hours, or 0 for a
+    PTO / Holiday / Sick day."""
+    return ZERO if is_leave(e) else entry_hours(e)
+
+
+def leave_hours(e: TimeEntry) -> Decimal:
+    """PTO / Holiday / Sick hours on the day (0 for a worked day)."""
+    return entry_hours(e) if is_leave(e) else ZERO
+
+
+def parse_hours(text: str) -> Decimal | None:
+    """Typed hours: "8", "7.5", "7:30" (h:mm) -> Decimal 2 dp; "" -> None. ValueError for junk or over 24."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    m = re.fullmatch(r"(\d{1,2}):([0-5]\d)", text)
+    try:
+        value = Decimal(int(m[1])) + Decimal(int(m[2])) / 60 if m else Decimal(text)
+    except ArithmeticError:
+        raise ValueError(f"'{text}' is not a number of hours") from None
+    if not value.is_finite() or value < 0 or value > 24:
+        raise ValueError(f"'{text}' is not a number of hours between 0 and 24")
+    return _hours2(value)
 
 
 # ---------------------------------------------------------------- periods
@@ -164,6 +206,18 @@ class PeriodLog:
     @property
     def lunch_minutes(self) -> int:
         return sum(int(e.lunch_deduct_min or 0) for e in self.entries)
+
+    @property
+    def leave_hours(self) -> Decimal:
+        return sum((leave_hours(e) for e in self.entries), ZERO)
+
+    def leave_text(self) -> str:
+        """Leave hours by type, e.g. 'PTO 8.00, Sick 4.00' ('' when none)."""
+        totals: dict[str, Decimal] = {}
+        for e in self.entries:
+            if is_leave(e):
+                totals[hours_type(e)] = totals.get(hours_type(e), ZERO) + entry_hours(e)
+        return ", ".join(f"{t} {totals[t]:.2f}" for t in HOURS_TYPES if t in totals)
 
     def notes_text(self) -> str:
         """Every day's note in the period, labelled with its day: 'Mon 10/20: picked up tile; Wed 10/22: ...'."""

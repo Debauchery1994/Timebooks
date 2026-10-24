@@ -1036,13 +1036,18 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
         cur_week = ws
         e = by_date.get(d)
         if e is not None:
-            hrs = _dec(calc.day_hours(e))
+            hrs = _dec(calc.day_hours(e))   # hours worked; time off is noted, not counted
             week_total += hrs
+            note = e.notes
+            if calc.is_leave(e):
+                note = f"{calc.hours_type(e)} {calc.leave_hours(e):.2f} h" + (f"; {e.notes}" if e.notes else "")
+            elif e.salary_hours is not None:
+                note = "Hours entered" + (f"; {e.notes}" if e.notes else "")
             row = [d.strftime("%a %m/%d/%Y"), calc.format_time(e.in1), calc.format_time(e.out1),
                    calc.format_time(e.in2), calc.format_time(e.out2),
                    str(e.lunch_deduct_min) if e.lunch_deduct_min else "",
-                   _hours(hrs) if (hrs or e.in1 or e.out1) else "",
-                   Paragraph(_esc(e.notes), notes_style) if e.notes else ""]
+                   _hours(hrs) if (hrs or e.in1 or e.out1 or e.salary_hours is not None) else "",
+                   Paragraph(_esc(note), notes_style) if note else ""]
         else:
             row = [d.strftime("%a %m/%d/%Y"), "", "", "", "", "", "", ""]
         data.append(row)

@@ -87,14 +87,15 @@ class StorageTests(unittest.TestCase):
         log = wb["TimeLog"]
         self.assertEqual([c.value for c in log[1]],
                          ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
-                          "LunchDeductMin", "Hours", "Notes"])
+                          "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType"])
         self.assertEqual(log.freeze_panes, "A2")
         self.assertTrue(log["A1"].font.bold)
         # Sorted by date then id; Hours is the live formula.
         self.assertEqual([(r[0].value.date(), r[1].value) for r in log.iter_rows(min_row=2)],
                          [(date(2026, 1, 5), "E001"), (date(2026, 1, 5), "E002"),
                           (date(2026, 1, 6), "E001")])
-        self.assertTrue(log["I2"].value.startswith("=MAX(0,ROUND((IF(AND(D2<>\"\",E2<>\"\")"))
+        self.assertTrue(log["I2"].value.startswith('=IF(AND(L2<>"",L2<>"Worked"),0,IF(K2<>"",'))
+        self.assertIn('MAX(0,ROUND((IF(AND(D2<>"",E2<>""),MOD(E2-D2,1),0)', log["I2"].value)
         self.assertEqual(log["D2"].number_format, "h:mm AM/PM")
         self.assertEqual(log["C2"].value, "Lee, Ann")
         self.assertEqual(wb["Employees"]["G2"].number_format, "$#,##0.00")

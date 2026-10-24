@@ -854,13 +854,15 @@ class PayRateDialog(ModalDialog):
 # --------------------------------------------------------------------------- Time Card tab
 
 class _DayRow:
-    __slots__ = ("d", "eid", "cells", "lunch", "notes", "hours_lbl", "day_lbl")
+    __slots__ = ("d", "eid", "cells", "lunch", "notes", "hours_lbl", "day_lbl", "salary", "kind")
 
     def __init__(self, d: date, eid: str):
         self.d, self.eid = d, eid
         self.cells: dict[str, tk.Entry] = {}
         self.lunch: ttk.Spinbox | None = None
         self.notes: tk.Entry | None = None
+        self.salary: tk.Entry | None = None       # salaried: hours typed directly (replaces the punches)
+        self.kind: ttk.Combobox | None = None     # salaried: Worked / PTO / Holiday / Sick
         self.hours_lbl: ttk.Label | None = None
         self.day_lbl: ttk.Label | None = None
 
@@ -905,7 +907,9 @@ class TimeCardTab(ttk.Frame):
         ttk.Button(a2, text="Print time card", style="Accent.TButton",
                    command=self.print_timecard).pack(side="left")
         ttk.Label(self, text="Type times like 8, 830a, 5:15 pm or 17:15. Tab / Enter moves to the next cell.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
+                  style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
+        self.v_salary_hint = tk.StringVar(value="")   # set in rebuild() for salaried people
+        ttk.Label(self, textvariable=self.v_salary_hint, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
 
         self.scroll = ScrollFrame(self)
         self.scroll.pack(fill="both", expand=True)
@@ -918,25 +922,29 @@ class TimeCardTab(ttk.Frame):
         self.v_reg = tk.StringVar(value="0.00")
         self.v_ot = tk.StringVar(value="0.00")
         self.v_tot = tk.StringVar(value="0.00")
+        self.v_leave = tk.StringVar(value="0.00")
         self.foot_boxes: dict[str, ttk.Frame] = {}
         for key, label, var in (("reg", "Regular hours", self.v_reg), ("ot", "Overtime hours", self.v_ot),
-                                ("tot", "Total hours", self.v_tot)):
+                                ("tot", "Total hours worked", self.v_tot), ("leave", "Time off (PTO etc.)",
+                                                                           self.v_leave)):
             box = ttk.Frame(foot, style="CardInner.TFrame")
             ttk.Label(box, text=label, style="CardMuted.TLabel").pack(anchor="w")
             ttk.Label(box, textvariable=var, style="CardBig.TLabel").pack(anchor="w")
             self.foot_boxes[key] = box
-        self._foot_ot: bool | None = None
+        self._foot_layout: tuple | None = None
         self._layout_footer()
 
-    def _layout_footer(self) -> None:
-        """Regular / Overtime / Total when overtime is enabled; otherwise just Total hours."""
+    def _layout_footer(self, show_leave: bool = False) -> None:
+        """Regular / Overtime / Total when overtime is enabled, otherwise just Total; plus Time off for salaried
+        people or when there is any."""
         ot = bool(self.book is not None and getattr(self.book.company, "overtime_enabled", False))
-        if ot == self._foot_ot:
+        if (ot, show_leave) == self._foot_layout:
             return
-        self._foot_ot = ot
+        self._foot_layout = (ot, show_leave)
         for box in self.foot_boxes.values():
             box.pack_forget()
-        for key in (("reg", "ot", "tot") if ot else ("tot",)):
+        keys = ("reg", "ot", "tot") if ot else ("tot",)
+        for key in keys + (("leave",) if show_leave else ()):
             self.foot_boxes[key].pack(side="left", padx=(0, 36))
 
     # ----- data refresh
@@ -1035,13 +1043,26 @@ class TimeCardTab(ttk.Frame):
                       style="Muted.TLabel", padding=20).grid(row=0, column=0)
             self.update_totals()
             return
-        heads = ["Day / Date", "In", "Out", "In", "Out", "Lunch Deduct (min)", "", "Hours", "Notes"]
+        start, end = period
+        emp = self.book.employees.get(eid)
+        # Salaried people (or anyone with typed hours / leave already in this period) get Salary hours + Type boxes.
+        salaried = (emp is not None and is_salaried(emp)) or any(
+            e.salary_hours is not None or calc.is_leave(e) for e in self.book.entries_for(eid, start, end))
+        heads = ["Day / Date", "In", "Out", "In", "Out", "Lunch Deduct (min)", ""]
+        if salaried:
+            heads += ["Salary hours", "Type"]
+        heads += ["Hours", "Notes"]
+        c_hours, c_notes, ncols = len(heads) - 2, len(heads) - 1, len(heads)
         for c, h in enumerate(heads):
             ttk.Label(g, text=h, style="GridHead.TLabel").grid(row=0, column=c, sticky="w", padx=4, pady=(0, 4))
-        ttk.Separator(g).grid(row=1, column=0, columnspan=9, sticky="ew", pady=(0, 4))
-        g.columnconfigure(8, weight=1)
+        ttk.Separator(g).grid(row=1, column=0, columnspan=ncols, sticky="ew", pady=(0, 4))
+        for c in range(ncols):
+            g.columnconfigure(c, weight=0)
+        g.columnconfigure(c_notes, weight=1)
+        self.v_salary_hint.set("Salaried: type the day's hours in Salary hours (it replaces In/Out), and choose PTO, "
+                               "Holiday or Sick for time off. Time off isn't counted as hours worked."
+                               if salaried else "")
 
-        start, end = period
         r = 2
         d = start
         wk = self.book.company.week_start
@@ -1071,13 +1092,25 @@ class TimeCardTab(ttk.Frame):
             b = ttk.Button(g, text="+Lunch", width=7, takefocus=0, style="Small.TButton",
                            command=lambda rw=row: self._add_lunch(rw))
             b.grid(row=r, column=6, padx=(0, 6), pady=2)
-            row.hours_lbl = ttk.Label(g, text=fmt_hours(calc.day_hours(entry)), width=7, anchor="e",
+            if salaried:
+                se = tk.Entry(g, width=7, font=F("base"), relief="flat", bd=1, justify="center")
+                paint_cell(se)
+                se.insert(0, fmt_hours(entry.salary_hours) if entry.salary_hours is not None else "")
+                se.grid(row=r, column=7, padx=3, pady=2, ipady=2)
+                self._bind_cell(se, idx, lambda rw=row, w=se: self._commit_salary_hours(rw, w))
+                row.salary = se
+                kb = ttk.Combobox(g, values=list(calc.HOURS_TYPES), state="readonly", width=8)
+                kb.set(calc.hours_type(entry))
+                kb.grid(row=r, column=8, padx=3, pady=2, sticky="w")
+                kb.bind("<<ComboboxSelected>>", lambda ev, rw=row, w=kb: self._update_entry(rw, hours_type=w.get()))
+                row.kind = kb
+            row.hours_lbl = ttk.Label(g, text=self._hours_text(entry), width=11, anchor="e",
                                       style="Hours.TLabel")
-            row.hours_lbl.grid(row=r, column=7, padx=6, pady=2, sticky="e")
+            row.hours_lbl.grid(row=r, column=c_hours, padx=6, pady=2, sticky="e")
             ne = tk.Entry(g, font=F("base"), relief="flat", bd=1)
             paint_cell(ne)
             ne.insert(0, entry.notes)
-            ne.grid(row=r, column=8, padx=3, pady=2, sticky="ew", ipady=2)
+            ne.grid(row=r, column=c_notes, padx=3, pady=2, sticky="ew", ipady=2)
             self._bind_cell(ne, idx, lambda rw=row, w=ne: self._commit_notes(rw, w))
             row.notes = ne
             self.rows.append(row)
@@ -1086,14 +1119,14 @@ class TimeCardTab(ttk.Frame):
             if nxt > end or calc.week_start_for(nxt, wk) != calc.week_start_for(d, wk):
                 ws = calc.week_start_for(d, wk)
                 lbl_txt = f"Week of {max(ws, start):%m/%d} subtotal"
-                ttk.Label(g, text=lbl_txt, style="Subtotal.TLabel").grid(row=r, column=0, columnspan=7,
+                ttk.Label(g, text=lbl_txt, style="Subtotal.TLabel").grid(row=r, column=0, columnspan=c_hours,
                                                                        sticky="e", padx=6, pady=(2, 2))
-                wl = ttk.Label(g, text="0.00", style="SubtotalVal.TLabel", width=7, anchor="e")
-                wl.grid(row=r, column=7, padx=6, sticky="e")
+                wl = ttk.Label(g, text="0.00", style="SubtotalVal.TLabel", width=11, anchor="e")
+                wl.grid(row=r, column=c_hours, padx=6, sticky="e")
                 self.week_lbls[ws] = wl
                 r += 1
                 if nxt <= end:
-                    ttk.Separator(g).grid(row=r, column=0, columnspan=9, sticky="ew", pady=4)
+                    ttk.Separator(g).grid(row=r, column=0, columnspan=ncols, sticky="ew", pady=4)
                     r += 1
             d = nxt
         self.scroll.scroll_top()
@@ -1176,7 +1209,28 @@ class TimeCardTab(ttk.Frame):
         except ValueError:
             return
         e = dataclasses.replace(self.book.get_entry(row.eid, row.d), **{fname: t})
-        row.hours_lbl.configure(text=fmt_hours(calc.day_hours(e)))
+        row.hours_lbl.configure(text=self._hours_text(e))
+
+    @staticmethod
+    def _hours_text(e: TimeEntry) -> str:
+        """The day's hours; time off is labelled ('8.00 PTO') since it isn't counted as hours worked."""
+        return fmt_hours(calc.entry_hours(e)) + (f" {calc.hours_type(e)}" if calc.is_leave(e) else "")
+
+    def _commit_salary_hours(self, row: _DayRow, w: tk.Entry) -> None:
+        if not w.winfo_exists() or self.book is None:
+            return
+        try:
+            hours = calc.parse_hours(w.get())
+        except ValueError:
+            set_invalid(w, True)
+            self.app.status(f"{row.d:%a %m/%d}: enter hours like 8, 7.5 or 7:30 (0 to 24).", error=True)
+            return
+        set_invalid(w, False)
+        shown = fmt_hours(hours) if hours is not None else ""
+        if w.get() != shown:
+            w.delete(0, "end")
+            w.insert(0, shown)
+        self._update_entry(row, salary_hours=hours)
 
     def _commit_lunch(self, row: _DayRow) -> None:
         sp = row.lunch
@@ -1215,19 +1269,28 @@ class TimeCardTab(ttk.Frame):
         row.lunch.set(str(e.lunch_deduct_min or 0))
         row.notes.delete(0, "end")
         row.notes.insert(0, e.notes)
+        if row.salary is not None:
+            set_invalid(row.salary, False)
+            row.salary.delete(0, "end")
+            row.salary.insert(0, fmt_hours(e.salary_hours) if e.salary_hours is not None else "")
+            row.kind.set(calc.hours_type(e))
 
     def update_totals(self) -> None:
-        self._layout_footer()
         if self.book is None or not self.rows:
+            self._layout_footer()
             self.v_reg.set("0.00")
             self.v_ot.set("0.00")
             self.v_tot.set("0.00")
+            self.v_leave.set("0.00")
             return
         for row in self.rows:
-            row.hours_lbl.configure(text=fmt_hours(calc.day_hours(self.book.get_entry(row.eid, row.d))))
+            row.hours_lbl.configure(text=self._hours_text(self.book.get_entry(row.eid, row.d)))
         start, end = self.selected_period()
         entries = self.book.entries_for(self.rows[0].eid, start, end)
         summary = calc.summarize_hours(entries, self.book.company, start, end)
+        leave = sum((calc.leave_hours(e) for e in entries), Decimal("0"))
+        self.v_leave.set(fmt_hours(leave))
+        self._layout_footer(show_leave=leave > 0 or any(r.salary is not None for r in self.rows))
         weeks = dict(summary.by_week)
         for ws, lbl in self.week_lbls.items():
             lbl.configure(text=fmt_hours(weeks.get(ws, Decimal("0"))))
@@ -1247,11 +1310,12 @@ class TimeCardTab(ttk.Frame):
         if row is None:
             return
         prev = self.book.get_entry(row.eid, row.d - timedelta(days=1))
-        if not any((prev.in1, prev.out1, prev.in2, prev.out2)):
-            self.app.status(f"Nothing to copy: {row.d - timedelta(days=1):%a %m/%d} has no punches.", error=True)
+        if not any((prev.in1, prev.out1, prev.in2, prev.out2)) and prev.salary_hours is None:
+            self.app.status(f"Nothing to copy: {row.d - timedelta(days=1):%a %m/%d} has no hours.", error=True)
             return
         self._update_entry(row, in1=prev.in1, out1=prev.out1, in2=prev.in2, out2=prev.out2,
-                           lunch_deduct_min=prev.lunch_deduct_min)
+                           lunch_deduct_min=prev.lunch_deduct_min, salary_hours=prev.salary_hours,
+                           hours_type=prev.hours_type)
         self._fill_row(row)
         self.app.status(f"Copied {row.d - timedelta(days=1):%a %m/%d} to {row.d:%a %m/%d}.")
 
@@ -1946,7 +2010,7 @@ class YearLogTab(ttk.Frame):
 
     # (column, heading, width, anchor)
     COLS = (("period", "Pay period", 240, "w"), ("emp", "Employee", 180, "w"), ("hours", "Hours worked", 100, "e"),
-            ("lunch", "Lunch (min)", 90, "center"), ("notes", "Notes", 360, "w"))
+            ("leave", "Time off", 130, "w"), ("lunch", "Lunch (min)", 90, "center"), ("notes", "Notes", 340, "w"))
 
     def __init__(self, master, app: "App"):
         super().__init__(master, padding=12)
@@ -2048,6 +2112,7 @@ class YearLogTab(ttk.Frame):
             "period": lambda g: (g.start, self._emp_name(g.employee_id).lower()),
             "emp": lambda g: (self._emp_name(g.employee_id).lower(), g.start),
             "hours": lambda g: (g.hours, g.start),
+            "leave": lambda g: (g.leave_hours, g.start),
             "lunch": lambda g: (g.lunch_minutes, g.start),
             "notes": lambda g: (g.notes_text().lower(), g.start),
         }
@@ -2071,6 +2136,8 @@ class YearLogTab(ttk.Frame):
 
     @staticmethod
     def _punches(e: TimeEntry) -> str:
+        if e.salary_hours is not None:
+            return "hours entered"
         pairs = [(a, b) for a, b in ((e.in1, e.out1), (e.in2, e.out2)) if a or b]
         return ", ".join(f"{calc.format_time(a) or '?'}–{calc.format_time(b) or '?'}" for a, b in pairs)
 
@@ -2080,7 +2147,8 @@ class YearLogTab(ttk.Frame):
         out = []
         for g in self.groups():
             out.append([max(g.start, start).isoformat(), min(g.end, end).isoformat(), self._emp_name(g.employee_id),
-                        fmt_hours(g.hours), str(g.lunch_minutes), g.notes_text(), g.employee_id])
+                        fmt_hours(g.hours), fmt_hours(g.leave_hours), g.leave_text(), str(g.lunch_minutes),
+                        g.notes_text(), g.employee_id])
         return out
 
     def reload(self) -> None:
@@ -2089,23 +2157,25 @@ class YearLogTab(ttk.Frame):
         self.tree.delete(*self.tree.get_children())
         self._show_sort_arrow()
         groups = self.groups()
-        total_h, total_l, days = Decimal("0"), 0, 0
+        total_h, total_off, total_l, days = Decimal("0"), Decimal("0"), 0, 0
         for g in groups:
             total_h += g.hours
+            total_off += g.leave_hours
             total_l += g.lunch_minutes
             days += len(g.entries)
             emp = self.book.employees.get(g.employee_id)
             pid = f"{g.employee_id}|{g.start.isoformat()}|period"
             self.tree.insert("", "end", iid=pid, tags=("former",) if emp is not None and not emp.active else (),
                              values=(self._period_label(g), self._emp_name(g.employee_id), fmt_hours(g.hours),
-                                     g.lunch_minutes or "", g.notes_text()))
+                                     g.leave_text(), g.lunch_minutes or "", g.notes_text()))
             for e in g.entries:
+                off = f"{calc.hours_type(e)} {fmt_hours(calc.leave_hours(e))}" if calc.is_leave(e) else ""
                 self.tree.insert(pid, "end", iid=f"{e.employee_id}|{e.work_date.isoformat()}|day",
                                  values=(f"{e.work_date:%a %m/%d}   {self._punches(e)}", "",
-                                         fmt_hours(calc.day_hours(e)), e.lunch_deduct_min or "", e.notes))
+                                         fmt_hours(calc.day_hours(e)), off, e.lunch_deduct_min or "", e.notes))
         self.tree.insert("", "end", iid="__total__", tags=("total",),
                          values=(f"Total ({len(groups)} pay periods, {days} days)", "", fmt_hours(total_h),
-                                 total_l or "", ""))
+                                 fmt_hours(total_off) if total_off else "", total_l or "", ""))
         # monthly summary (whole year, respecting the employee filter)
         self.mtree.delete(*self.mtree.get_children())
         y = self.book.company.year
@@ -2169,11 +2239,12 @@ class YearLogTab(ttk.Frame):
         rows = self.rows()
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["PeriodStart", "PeriodEnd", "Employee", "HoursWorked", "LunchDeductMin", "Notes",
-                        "EmployeeID"])
+            w.writerow(["PeriodStart", "PeriodEnd", "Employee", "HoursWorked", "TimeOffHours", "TimeOff",
+                        "LunchDeductMin", "Notes", "EmployeeID"])
             w.writerows(rows)
             w.writerow(["Total", "", "", fmt_hours(sum(Decimal(r[3].replace(",", "")) for r in rows)),
-                        str(sum(int(r[4]) for r in rows)), "", ""])
+                        fmt_hours(sum(Decimal(r[4].replace(",", "")) for r in rows)), "",
+                        str(sum(int(r[6]) for r in rows)), "", ""])
         self.app.status(f"Exported {len(rows)} pay period rows to {path}")
 
 

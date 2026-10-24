@@ -278,3 +278,14 @@ stored (collect W-9s).
   that crosses the month edge only counts that month's days and is labelled "(partial)", so totals match the monthly
   summary. Column headings sort (click again to reverse).
 - Export CSV: PeriodStart, PeriodEnd, Employee, HoursWorked, LunchDeductMin, Notes, EmployeeID, plus a total row.
+
+## Salary hours and time off (Time Card)
+- `TimeEntry.salary_hours` (Decimal, optional) and `TimeEntry.hours_type` (`Worked` default | `PTO` | `Holiday` | `Sick`),
+  stored in two new TimeLog columns at the end: `SalaryHours`, `HoursType` (blank for Worked). Workbooks without them load
+  as punches only / Worked.
+- The Time Card shows **Salary hours** and **Type** boxes for salaried people (and for anyone whose period already has
+  typed hours or time off). Typed hours (`8`, `7.5`, `7:30`) replace the In/Out punches for that day.
+- `calc.entry_hours` = all hours on the day; `calc.day_hours` = hours **worked** (0 for PTO/Holiday/Sick), which is what
+  pay, overtime, the Year Log, monthly summary, statements and memos count; `calc.leave_hours` = time off. The TimeLog
+  `Hours` formula follows the same rule (verified in GridCraft). Time Card footer shows Time off; Year Log has a Time
+  off column ("PTO 8.00, Sick 4.00"); the printed time card notes the time off. Salaried pay never depends on hours.
