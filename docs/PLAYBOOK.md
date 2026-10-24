@@ -60,8 +60,12 @@ Phases 4 and 5 are independent and can swap order. Phase 3 needs Phase 2.
 
 ## Phase 0 — Ship 1.1.2 (now)
 
-- [ ] Push the 4 local commits
+- [x] Pre-release review (timebooks-reviewer): 2 high, 3 medium, 6 low findings; 9 fixed, #6 handled in release notes,
+      #11 (Year Log vs Pay & Checks for days outside the year) existed before and is parked
+- [ ] Push the local commits
 - [ ] Build `TimeCardPro-Setup.exe` and publish release `1.1.2`
+- [ ] Release notes: "Update every copy (including USB/portable copies) to 1.1.2 before using a salary per pay
+      period — older copies read it as a yearly salary."
 - [ ] From an installed 1.1.1: Help → Check for Updates → install → confirm the workbook, PIN and settings survived
 - [ ] When a printer is available: alignment test, then one real voucher check
 
@@ -238,6 +242,9 @@ and totals, same as the other tabs.
 - **Tax rules change** (e.g. 1099 thresholds). Thresholds are settings, labelled "confirm with your tax professional".
 
 ## 7. Parking lot (ideas, not scheduled)
+
+- Year Log / monthly summary: include days just outside the year that fall in the first/last pay period (review #11)
+- Workbook "minimum app version" marker so older copies refuse to save newer workbooks (review #6; Phase 1 schema work)
 
 - Bank statement CSV import and matching against expenses/sales
 - Mileage log

@@ -188,6 +188,23 @@ class TimecardBook:
         self.payroll = []
         self.logo_png = b""
         self.dirty = False
+        self.disk_stamp: tuple[int, int] | None = None   # (mtime_ns, size) of the file when loaded/saved
+
+    @staticmethod
+    def _stamp(p: Path) -> tuple[int, int] | None:
+        try:
+            st = p.stat()
+        except OSError:
+            return None
+        return st.st_mtime_ns, st.st_size
+
+    def changed_on_disk(self) -> bool:
+        """True if the file was changed by something else (GridCraft, Excel, another PC) since it was loaded or
+        last saved here."""
+        if self.path is None or self.disk_stamp is None:
+            return False
+        now = self._stamp(Path(self.path))
+        return now is not None and now != self.disk_stamp
 
     @classmethod
     def new(cls, company: Company) -> "TimecardBook":
@@ -209,6 +226,7 @@ class TimecardBook:
         except (zipfile.BadZipFile, KeyError, OSError, ValueError) as exc:
             raise WorkbookError(f"{p.name} is not a readable .xlsx workbook ({exc}).") from exc
 
+        stamp = cls._stamp(p)
         names = {n.lower(): n for n in wb.sheetnames}
         if "employees" not in names and "timelog" not in names:
             raise WorkbookError(f"{p.name} is not a TimeCard Pro workbook "
@@ -241,6 +259,7 @@ class TimecardBook:
         finally:
             wb.close()
         book.dirty = False
+        book.disk_stamp = stamp
         return book
 
     @staticmethod
@@ -267,6 +286,9 @@ class TimecardBook:
                     kwargs[f.name] = _text(raw)
             except (InvalidOperation, ValueError):
                 pass  # keep the default
+        if values.get("pay_hold_back") in (None, ""):
+            # Workbooks from before Pay timing existed: keep paying the period that has ended, as 1.1.1 did.
+            kwargs["pay_hold_back"] = "one"
         return Company(**kwargs)
 
     @staticmethod
@@ -356,6 +378,7 @@ class TimecardBook:
                     pass
         self.path = target
         self.dirty = False
+        self.disk_stamp = self._stamp(target)
         return target
 
     # ------------------------------------------------------------ branding

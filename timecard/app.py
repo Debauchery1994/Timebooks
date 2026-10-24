@@ -1446,8 +1446,6 @@ class LockOverlay(ttk.Frame):
         super().__init__(master, padding=40)
         self.on_unlock = on_unlock
         self.what, self.purpose = what, purpose
-        self.fails = 0
-        self.locked_until = 0.0
         self.inner = ttk.Frame(self)
         self.inner.place(relx=0.5, rely=0.35, anchor="center")
         self.v_msg = tk.StringVar()
@@ -1508,7 +1506,27 @@ class LockOverlay(ttk.Frame):
         ttk.Label(self.inner, textvariable=self.v_msg, style="Error.TLabel",
                   wraplength=460, justify="center").pack()
 
+    # One wrong-PIN count and lockout shared by every lock screen, so switching tabs doesn't buy more guesses.
+    _shared = {"fails": 0, "locked_until": 0.0}
+
+    @property
+    def fails(self) -> int:
+        return LockOverlay._shared["fails"]
+
+    @fails.setter
+    def fails(self, value: int) -> None:
+        LockOverlay._shared["fails"] = value
+
+    @property
+    def locked_until(self) -> float:
+        return LockOverlay._shared["locked_until"]
+
+    @locked_until.setter
+    def locked_until(self, value: float) -> None:
+        LockOverlay._shared["locked_until"] = value
+
     def show(self) -> None:
+        """Cover the tab, rebuilding first if a PIN was created (or removed) since this screen was built."""
         if self.mode != ("unlock" if security.has_pin() else "create"):
             self.build()
         self.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -1518,6 +1536,9 @@ class LockOverlay(ttk.Frame):
                 e.delete(0, "end")
         if _time.monotonic() >= self.locked_until:
             self.v_msg.set("")
+        else:   # locked out on the other tab: same countdown here
+            self._set_input_state("disabled")
+            self._countdown()
 
     def focus_pin(self) -> None:
         if self.e_pin is not None and str(self.e_pin.cget("state")) != "disabled":
@@ -1527,6 +1548,12 @@ class LockOverlay(ttk.Frame):
         if _time.monotonic() < self.locked_until:
             return
         pin = self.e_pin.get()
+        if self.mode == "create" and security.has_pin():
+            # a PIN was created on the other tab since this screen was built: never let it be replaced here
+            self.build()
+            self.v_msg.set("A PIN has already been set. Enter it to unlock.")
+            self.focus_pin()
+            return
         if self.mode == "create":
             conf = self.e_conf.get() if self.e_conf else ""
             question, ans, ans2 = self.cb_q.get().strip(), self.e_ans.get(), self.e_ans2.get()
@@ -2790,7 +2817,7 @@ class PayrollTab(ttk.Frame):
         self.book.void_check(n)
         self.app.mark_dirty()
         self.load_recorded()
-        self.app.status(f"Check #{n} voided. Remember to save.")
+        self.app.status(f"Check #{n} voided.{self.app.save_hint()}")
 
     def alignment_test(self) -> None:
         if self.book is None:
@@ -2987,6 +3014,7 @@ class CompanyTab(ttk.Frame):
     def lock(self) -> None:
         """Take the settings off the screen (not just covered, so Tab can't reach them) behind the PIN."""
         self.locked = True
+        self._kept_edits = self.form_changed()   # unsaved edits stay (hidden) until the PIN is entered again
         self.sf.pack_forget()
         self.btns.pack_forget()
         self.overlay.show()
@@ -2996,9 +3024,28 @@ class CompanyTab(ttk.Frame):
         self.overlay.place_forget()
         self.sf.pack(fill="both", expand=True)
         self.btns.pack(fill="x")
-        self.refresh()
+        if getattr(self, "_kept_edits", False) and self.form_changed():
+            self.app.status("Your unsaved changes to company settings were kept. Click Save Settings to keep them.")
+        else:
+            self.refresh()
+            self.app.status("Company settings unlocked. They lock again when you leave this tab.")
+        self._kept_edits = False
         self.app.note_activity()
-        self.app.status("Company settings unlocked. They lock again when you leave this tab.")
+
+    def form_changed(self) -> bool:
+        """True if the form holds edits that haven't been saved to the workbook with Save Settings."""
+        if self.book is None or not self.vars:
+            return False
+        c = self.book.company
+        for _s, fname, _l, kind, _o in self.FIELDS:
+            val = getattr(c, fname, None)
+            shown = self.vars[fname].get()
+            if kind == "bool":
+                if bool(shown) != bool(val):
+                    return True
+            elif str(shown).strip() != ("" if val is None else str(val)).strip():
+                return True
+        return False
 
     @property
     def book(self):
@@ -3057,7 +3104,7 @@ class CompanyTab(ttk.Frame):
         self.app.mark_dirty()
         self.refresh_logo_preview()
         self.app.refresh_branding()
-        self.app.status("Logo added. Remember to save the workbook.")
+        self.app.status(f"Logo added.{self.app.save_hint()}")
         return True
 
     def remove_logo(self) -> None:
@@ -3067,7 +3114,7 @@ class CompanyTab(ttk.Frame):
         self.app.mark_dirty()
         self.refresh_logo_preview()
         self.app.refresh_branding()
-        self.app.status("Logo removed. Remember to save the workbook.")
+        self.app.status(f"Logo removed.{self.app.save_hint()}")
 
     def _update_swatch(self) -> None:
         val = self.vars["brand_color"].get().strip()
@@ -3203,12 +3250,25 @@ class CompanyTab(ttk.Frame):
             messagebox.showwarning("Company Settings", "\n".join(errors), parent=self)
             return
         new = dataclasses.replace(c, **changes)
+        per_period = [e for e in self.book.active_employees()
+                      if is_salaried(e) and calc.salary_is_per_period(e) and self.book.has_pay_rate(e.employee_id)]
+        if new.pay_period != c.pay_period and per_period:
+            if not messagebox.askokcancel(
+                    "Pay period changed",
+                    f"The pay period is changing from {c.pay_period} to {new.pay_period}.\n\n"
+                    "These people have a salary per pay period that was set for the old schedule:\n\n"
+                    + "\n".join(e.full_name for e in per_period)
+                    + "\n\nTheir amounts will be cleared so they can be re-entered for the new schedule. "
+                      "They are left out of Pay & Checks until then.", parent=self):
+                return
+            for e in per_period:
+                self.book.set_pay_rate(e.employee_id, Decimal("0"))
         if new != c:
             self.book.company = new
             self.app.mark_dirty()
             self.app.refresh_all()
             self.app.refresh_branding()
-            self.app.status("Company settings updated. Remember to save the workbook.")
+            self.app.status(f"Company settings updated.{self.app.save_hint()}")
         else:
             self.app.status("No changes to company settings.")
 
@@ -3408,6 +3468,9 @@ class App(tk.Tk):
         self._update_thread: threading.Thread | None = None
         self._autosave_job: str | None = None
         self._unbacked_autosave = False   # auto-saves since the last backup (backed up when closing)
+        self._autosave_failed = False     # last attempt failed (status bar shows an error)
+        self._autosave_paused = False     # file changed outside the app: wait for the user
+        self._snapshot_taken = False      # copy of the file as opened, made before the first autosave
         if getattr(sys, "frozen", False):   # only the installed/portable app checks; not tests or source runs
             self.after(4000, self._startup_update_check)
 
@@ -3667,11 +3730,18 @@ class App(tk.Tk):
         self._schedule_autosave()
 
     # ----- autosave
+    def save_hint(self) -> str:
+        """Tail for status messages after a change: nothing when it will be saved automatically."""
+        return "" if self.settings.data.get("autosave", True) else " Remember to save the workbook."
+
     def _toggle_autosave(self) -> None:
         self.settings.data["autosave"] = bool(self.v_autosave.get())
         self.settings.save()
         if self.v_autosave.get():
             self._schedule_autosave()
+        elif self._autosave_job is not None:   # turned off: drop a save that was already on its way
+            self.after_cancel(self._autosave_job)
+            self._autosave_job = None
 
     def _schedule_autosave(self, delay_ms: int = AUTOSAVE_DELAY_MS) -> None:
         if self._autosave_job is not None:
@@ -3683,18 +3753,45 @@ class App(tk.Tk):
     def _autosave(self) -> None:
         """Quietly save the open workbook; a locked file only warns in the status bar and retries."""
         self._autosave_job = None
-        if self.book is None or self.book.path is None or not self.book.dirty:
+        if (self.book is None or self.book.path is None or not self.book.dirty
+                or not self.settings.data.get("autosave", True) or self._autosave_paused):
             return
+        if self.book.changed_on_disk():
+            # GridCraft / Excel / another PC changed the file: never overwrite that without asking
+            self._autosave_paused = True
+            log.warning("Autosave paused: %s changed outside the app", self.book.path)
+            self.status(f"{self.book.path.name} was changed outside TimeCard Pro, so automatic saving is paused. "
+                        "Open it again to see those changes, or use File > Save to replace them.", error=True)
+            return
+        self._snapshot_before_first_autosave()
         try:
             self.book.save()
         except WorkbookError as exc:
             log.warning("Autosave failed: %s", exc)
+            self._autosave_failed = True
             self.status(f"Could not save automatically ({exc}). Close the workbook in other programs; "
                         "TimeCard Pro will try again.", error=True)
             self._schedule_autosave(AUTOSAVE_RETRY_MS)
             return
         self._unbacked_autosave = True
+        if self._autosave_failed:
+            self._autosave_failed = False
+            self.status("Saved automatically.")
         self.update_title()
+
+    def _snapshot_before_first_autosave(self) -> None:
+        """Keep a copy of the workbook as it was opened, so automatic saving can always be undone. Goes to the
+        backup folder when one is set, else a "TimeCard Pro Backups" folder next to the workbook."""
+        if self._snapshot_taken or self.book is None or self.book.path is None:
+            return
+        self._snapshot_taken = True
+        dest = self.settings.backup_dir if self.settings.backup_dir and Path(self.settings.backup_dir).is_dir() \
+            else str(Path(self.book.path).parent)
+        try:
+            backup.backup_workbook(self.book.path, dest, keep=int(self.settings.data.get("backup_keep")
+                                                                  or backup.DEFAULT_KEEP))
+        except OSError as exc:   # includes FileNotFoundError for a workbook not on disk yet
+            log.warning("Could not copy the workbook before autosaving: %s", exc)
 
     def _backup_after_autosaves(self) -> None:
         """Auto-saves skip the backup copy (it would fill the backup folder); make one when leaving the book."""
@@ -3725,6 +3822,7 @@ class App(tk.Tk):
             self.after_cancel(self._autosave_job)
             self._autosave_job = None
         self.book = book
+        self._autosave_paused = self._autosave_failed = self._snapshot_taken = False
         self.payroll_tab.period_chosen = False
         self._show_book_ui(True)
         self.employees_tab.selected = None
@@ -3759,6 +3857,7 @@ class App(tk.Tk):
             if current is not tab and not tab.locked:
                 tab.lock()
         if current in self.pin_tabs and current.locked:
+            current.overlay.show()   # refreshes create/unlock mode if a PIN was set on the other tab
             current.overlay.focus_pin()
         if current is self.yearlog_tab:
             self.yearlog_tab.reload()
@@ -3873,6 +3972,13 @@ class App(tk.Tk):
         if not path:
             return
         book = self.build_new_book(res, carry_from=self.book if res["carry"] else None)
+        cleared = []
+        if res["carry"] and self.book is not None and self.book.company.pay_period != book.company.pay_period:
+            # a salary per pay period was set for the old schedule; it has to be re-entered for the new one
+            for e in book.employees.values():
+                if is_salaried(e) and calc.salary_is_per_period(e) and book.has_pay_rate(e.employee_id):
+                    book.set_pay_rate(e.employee_id, Decimal("0"))
+                    cleared.append(e.full_name)
         try:
             book.save(path)
         except WorkbookError as exc:
@@ -3880,6 +3986,10 @@ class App(tk.Tk):
             return
         self.set_book(book)
         self.status(f"Created {path}")
+        if cleared:
+            messagebox.showinfo("New Year Workbook", f"The pay period changed to {book.company.pay_period}, so "
+                                "these salaries per pay period were cleared and need to be set again on the "
+                                "Employees tab:\n\n" + "\n".join(cleared), parent=self)
 
     @staticmethod
     def build_new_book(res: dict, carry_from: TimecardBook | None = None) -> TimecardBook:
@@ -3903,12 +4013,18 @@ class App(tk.Tk):
         self.commit_pending()
         if self.book.path is None:
             return self.save_as()
+        if self.book.changed_on_disk() and not messagebox.askyesno(
+                APP_NAME, f"{self.book.path.name} was changed outside TimeCard Pro (for example in GridCraft) "
+                "since it was opened here.\n\nSaving replaces those changes with what is shown in TimeCard Pro. "
+                "To keep them instead, choose No and open the workbook again.\n\nReplace the file?", parent=self):
+            return False
         try:
             p = self.book.save()
         except WorkbookError as exc:
             messagebox.showerror(APP_NAME, f"Could not save the workbook.\n\n{exc}\n\nIf it is open in GridCraft, "
                                  "close it there and try again.", parent=self)
             return False
+        self._autosave_paused = self._autosave_failed = False
         self.update_title()
         self.status(f"Saved {p}")
         self.auto_backup()

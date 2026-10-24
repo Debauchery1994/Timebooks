@@ -254,13 +254,20 @@ stored (collect W-9s).
   2 s later. A locked file (open in GridCraft/Excel) only shows a status-bar error and retries every 30 s. Autosaves don't
   make backup copies; one is made when the workbook is closed or another is opened. With autosave on, closing saves
   instead of asking.
-- **Pay timing** (`Company.pay_hold_back`, Company Settings → Pay): `none` (default) = Pay & Checks opens on the pay
-  period containing today; `one` = hold one pay period back and open on the period before it. Until the user picks a
+- Autosave never overwrites outside edits: the book remembers the file's (mtime, size) at load/save
+  (`TimecardBook.changed_on_disk`). If it changed (GridCraft, Excel, another PC) autosave pauses with a status-bar
+  message, and File → Save asks before replacing the file. Before the first autosave of each opened book a copy of the
+  file as opened goes to the backup folder (or `TimeCard Pro Backups` next to the workbook), so autosave can be undone.
+- Changing the pay period (Company Settings, or a New Year workbook carrying people over) clears salaries entered
+  per pay period, after a warning, so they are re-entered for the new schedule.
+- **Pay timing** (`Company.pay_hold_back`, Company Settings → Pay): `none` (default for new workbooks; workbooks from
+  before the setting existed load as `one`, matching 1.1.1) = Pay & Checks opens on the pay period containing today; `one` = hold one pay period back and open on the period before it. Until the user picks a
   period, opening the tab re-applies this. Calculate names hourly people skipped for having no hours in the period when
   they have unpaid hours in another one.
 - **Company Settings is behind the PIN** like Employees (bank routing/account numbers live there): same LockOverlay,
   the settings form is removed from the layout while locked, it relocks when the tab is left, on the 5-minute idle
-  lock and from File → Lock Employees and Company Settings.
+  lock and from File → Lock Employees and Company Settings. Both lock screens share one wrong-PIN count/lockout,
+  a screen built before a PIN existed can't be used to replace it, and unsaved Company edits survive a relock.
 
 ## Year Log
 - One row per **pay period × employee** (`calc.period_log` / `PeriodLog`): Pay period | Employee | Hours worked |
