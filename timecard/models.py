@@ -168,9 +168,9 @@ class Expense:
     memo: str = ""
     receipt_file: str = ""             # relative to the workbook's folder, e.g. Receipts\2026\... .jpg
     status: str = "Approved"           # Approved | Draft (scanned, not reviewed yet)
-    vendor_id: str = ""                # the Vendors list (1.5.0)
+    vendor_id: str = ""                # the Vendors list (1.4.0)
     created: str = ""                  # when it was entered, ISO date-time
-    recurring_id: str = ""             # made from this recurring expense (1.4.0)
+    recurring_id: str = ""             # made from this recurring expense (1.3.0)
     person_id: str = ""                # on whose account (e.g. an owner's gas), "" = the business
 
 

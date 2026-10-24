@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro into **TimeBooks**, a small-business b
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
-_Last updated: 2026-10-24 · current version: 1.4.0 (built, not yet published) · next: 1.5.0_
+_Last updated: 2026-10-24 · published: 1.2.0 · in progress: 1.3.0 (part 3 of 3) · next: 1.4.0_
 
 ---
 
@@ -51,24 +51,31 @@ Guiding rules (these come from the decisions already made in the app):
 | Release | What the owner gets | Size |
 |---|---|---|
 | 1.2.0 | ✅ Released: time off, tab locks, features on/off, code split | — |
-| **1.3.0** | **TimeBooks**: the new name, plus **Expenses & Receipts** entered by hand and **scanned** (scanner, scanner folder, photo or PDF → vendor, date, total, items filled in) | XL |
-| 1.4.0 | **Recurring expenses, mileage, owners**: rent and subscriptions repeat as drafts; a mileage log; owners as a pay group (gas and mileage on their account, no paycheck) | M |
-| 1.5.0 | **Bank statements and phone photos**: bank statements in (CSV, or read from the statement) and matched; phone photos over Wi-Fi | L |
-| 1.6.0 | **Vendors & Pay Bills**: print checks to vendors on the same checkbook; positive-pay file for the bank | M |
-| 1.7.0 | **Sales** tab: record money coming in; simple invoices with a printable PDF | M |
-| 1.8.0 | **Reports**: Profit & Loss, spending by category, mileage, tax-pro export pack | M |
+| **1.3.0** | **TimeBooks**: the new name; **Expenses & receipts** (by hand, scanned, scanner folder); recurring expenses; a mileage log; owners as a pay group; bank statements in and matched; phone photos over Wi-Fi | XL |
+| 1.4.0 | **Vendors & Pay Bills**: print checks to vendors on the same checkbook; positive-pay file for the bank | M |
+| 1.5.0 | **Sales** tab: record money coming in; simple invoices with a printable PDF | M |
+| 1.6.0 | **Reports**: Profit & Loss, spending by category, mileage, tax-pro export pack | M |
 | 2.0.0 | Several businesses in one app, first-run wizard, in-app help, code-signed installer | M |
 
-1.6.0 and 1.7.0 are independent and can swap order.
+1.4.0 and 1.5.0 are independent and can swap order.
 
 ---
 
-## 1.3.0 — TimeBooks: the new name, Expenses and receipt scanning
+## 1.3.0 — TimeBooks: everything since 1.2.0, in one release
+
+_Decided 2026-10-24:_ nothing has been published since 1.2.0, so the rename, Expenses and scanning, recurring
+expenses / mileage / owners, and bank statements / phone photos all ship together as 1.3.0 (built in three
+parts below, each reviewed before the next).
+
+- [ ] Publish `v1.3.0` as the only download (delete the 1.2.0 release); the owner uninstalls TimeCard Pro and
+      installs TimeBooks
+
+### Part 1 — TimeBooks: the new name, Expenses and receipt scanning
 
 One release with three parts, built in this order so each part lands on top of the last: **A** the rename, **B**
 expenses by hand, **C** scanning. Each part is committed and tested on its own; only the release waits for all three.
 
-### A. Rename to TimeBooks (first, before any new tabs)
+#### A. Rename to TimeBooks (first, before any new tabs)
 
 **Owner sees:** the app, Setup, shortcuts, window title, printouts and Help → About say **TimeBooks**. Their
 workbooks, PIN, settings, backups and recent files are all still there after the update.
@@ -94,7 +101,7 @@ workbooks, PIN, settings, backups and recent files are all still there after the
 - [ ] Test: update a 1.2.0 install and a 1.2.0 portable copy to 1.3.0; workbook, PIN, settings, recent files, backups
       and shortcuts all survive; uninstall removes everything
 
-### B. Expenses & Receipts, entered by hand
+#### B. Expenses & Receipts, entered by hand
 
 **Owner sees:** an **Expenses** tab. Add an expense (date, vendor, amount, category, payment method, memo), attach a
 receipt (image or PDF), view it, filter by month/category/vendor, and sort, the same way as the Year Log. Totals by
@@ -109,7 +116,7 @@ category at the bottom.
 `Expenses`: `ExpenseID | Date | Vendor | VendorID | Category | Amount | Tax | PaymentMethod | CheckNumber | Memo |
 ReceiptFile | Status | Created`
 - `Status`: `Draft` (scanned, not reviewed) / `Approved`
-- `PaymentMethod`: Cash, Card, Check, Bank transfer, Other. `CheckNumber` links to a vendor check (1.6.0).
+- `PaymentMethod`: Cash, Card, Check, Bank transfer, Other. `CheckNumber` links to a vendor check (1.4.0).
 - `ReceiptFile` is a path **relative to the workbook's folder**, e.g. `Receipts\2026\2026-10-24 Home Depot 84.17.jpg`
 
 `Categories`: the owner's list, seeded with IRS Schedule C lines so the tax professional can use it directly:
@@ -121,7 +128,7 @@ inside the `.xlsx`. Images would make the workbook huge and slow to save.
 - [ ] Backups copy the receipts folder too (only new files each time)
 - [ ] Moving or renaming a receipt is done through the app so links don't break
 
-### C. Scan a receipt and fill it in automatically
+#### C. Scan a receipt and fill it in automatically
 
 **Owner sees:** **Expenses → Scan Receipt**. The receipt is scanned (or picked up from the scanner's folder, or
 dropped in as a phone photo or PDF), and a review screen shows the image on the left and the filled-in fields on the
@@ -161,7 +168,7 @@ that's wrong, then Approve.
       Later: PDFs that already contain text (emailed receipts) can skip OCR and read the text directly.
 - [x] Field extraction rules (prototype; plus a decimal point read as a bullet, "1 • 27"): total = the largest amount next to TOTAL / AMOUNT DUE / BALANCE; date = first date
       pattern; tax = TAX line; vendor = top lines matched against the vendor names already used (the Vendors list
-      once 1.6.0 adds it; learns from corrections); items = lines with a price.
+      once 1.4.0 adds it; learns from corrections); items = lines with a price.
 - [x] Remember corrections: the next receipt from the same vendor suggests the same category.
 - [x] Confidence: fields the app isn't sure of are highlighted for review; nothing is approved without a person.
       _Decided:_ a vendor is only "sure" when it matches a known vendor, so the first receipt from every new vendor
@@ -171,24 +178,22 @@ that's wrong, then Approve.
       one-time warning and a per-receipt indicator.
 
 - [x] Pre-release reviews (rename; Expenses and scanning): all findings fixed
-- [x] Version 1.3.0; installer built (`release-builds/1.3.0/`)
-- [ ] Publish `v1.3.0` (the only download), delete the 1.2.0 release; owner reinstalls
 
-**1.3.0 is done when** a 1.2.0 copy updates to Timebooks with everything intact; a month of expenses can be entered
+**Part 1 is done when** a 1.2.0 copy updates to Timebooks with everything intact; a month of expenses can be entered
 with receipts attached and the category totals match a hand count; and 20 real receipts from the business are
 scanned, at least 80% get the correct total and date without edits, and every one can be fixed on the review screen.
 
-## 1.4.0 — Recurring expenses, mileage, owners
+### Part 2 — Recurring expenses, mileage, owners
 
 From the parking lot (owner's notes, 2026-10-24). Built in this order; each part is committed and tested on its own.
 
-### A. Recurring expenses (Expenses tab)
+#### A. Recurring expenses (Expenses tab)
 **Owner sees:** mark an expense as **repeats monthly / quarterly / yearly** (rent, phone, software). On the due date
 the app adds it as a Draft for that period (nothing is counted until approved), and the Expenses tab shows what's due.
 - [x] `Recurring` sheet: `RecurringID | Vendor | Category | Amount | PaymentMethod | Memo | Every | NextDate | Active | Day`
 - [x] Due ones become Drafts when the workbook opens (once per period, never twice); stop / restart / skip one
 
-### B. Mileage log, and owners as a pay group
+#### B. Mileage log, and owners as a pay group
 **Owner sees:** a **Mileage** list (in Expenses): date, who drove, purpose, from/to, miles; the IRS standard mileage
 rate from Company Settings (labelled "confirm each year with your tax professional"), totals by person and month.
 On the Employees tab a person can be an **Owner**: no payroll checks (a sole proprietor takes draws, not pay), not on
@@ -196,16 +201,16 @@ On the Employees tab a person can be an **Owner**: no payroll checks (a sole pro
 - [x] `Mileage` sheet: `TripID | Date | PersonID | Purpose | From | To | Miles | Rate | Amount | Notes`
 - [x] `Employee.pay_type` "Owner" (Pay & Checks and 1099 totals leave owners out; their history stays)
 - [x] Expense `PersonID` column ("on whose account"), so gas paid by the owner shows on their account
-- [ ] Mileage and owner totals feed the 1.8.0 reports
+- [ ] Mileage and owner totals feed the 1.6.0 reports
 
-**1.4.0 is done when** a month's rent repeats on its own, a week of trips adds up correctly, and an owner's gas
+**Part 2 is done when** a month's rent repeats on its own, a week of trips adds up correctly, and an owner's gas
 and miles show on their account without a paycheck.
 
-- [x] Pre-release review; version 1.4.0; installer built
+- [x] Pre-release review (part 2)
 
-## 1.5.0 — Bank statements and phone photos
+### Part 3 — Bank statements and phone photos
 
-### A. Bank statements in
+#### A. Bank statements in
 **Owner sees:** **Expenses → Import Bank Statement**: a CSV from the bank, or, when the bank only gives a PDF (or a
 paper statement is scanned), the app reads the statement and builds the list itself. Each line is matched to an
 existing expense (same amount, close date); unmatched money out can become Draft expenses with one click.
@@ -213,9 +218,9 @@ existing expense (same amount, close date); unmatched money out can become Draft
 - [ ] Statement PDF / scan → rows: text PDFs read directly (pypdfium2 text), scans through the receipt reader; the
       owner checks the rows before anything is matched, and can save them as a CSV
 - [ ] Matching rules and a review list (matched / possible / unmatched); nothing changes without the owner's OK
-- [ ] Money in is kept for the Sales tab (1.7.0) to match deposits
+- [ ] Money in is kept for the Sales tab (1.5.0) to match deposits
 
-### B. Phone photos over Wi-Fi
+#### B. Phone photos over Wi-Fi
 **Owner sees:** **Scan Receipt → From my phone**: a QR code and a short web address; the phone (same Wi-Fi) opens it,
 takes photos of receipts, and they arrive as Drafts. No app to install and nothing goes over the internet.
 - [ ] Small upload page served by TimeBooks only while that window is open, on the local network only, with a
@@ -223,10 +228,10 @@ takes photos of receipts, and they arrive as Drafts. No app to install and nothi
 - [ ] Windows Firewall will ask the first time; explain it in the window. If a PC blocks it, the scanner folder
       (e.g. a phone's OneDrive/Google Photos sync folder) is the fallback
 
-**1.5.0 is done when** a real bank statement (CSV and PDF) matches against the expenses and a phone photo arrives
+**Part 3 is done when** a real bank statement (CSV and PDF) matches against the expenses and a phone photo arrives
 as a draft.
 
-## 1.6.0 — Vendors and paying bills by check
+## 1.4.0 — Vendors and paying bills by check
 
 **Owner sees:** a **Vendors** list (name, address, phone, default category, "send a 1099"), and **Pay Bills**: pick a
 vendor, amount, memo, and which expenses or bills it pays, then print. The check prints with the same layouts
@@ -247,7 +252,7 @@ and alignment as payroll checks.
 **Done when** a vendor check and a payroll check print on the same stock with consecutive numbers and both appear
 in the register.
 
-## 1.7.0 — Sales / money in
+## 1.5.0 — Sales / money in
 
 **Owner sees:** a **Sales** tab. Record a sale or deposit: date, customer, amount, sales tax collected, payment
 method, category (service, product, other), invoice/reference #, memo; attach a document. Month and customer filters
@@ -263,7 +268,7 @@ and totals, same as the other tabs.
 
 **Done when** a month of sales can be entered and the monthly total matches the bank deposits.
 
-## 1.8.0 — Reports
+## 1.6.0 — Reports
 
 - [ ] **Profit & Loss** for a month, quarter or year: Sales − Expenses by category − Payroll (contract labor/wages)
 - [ ] Spending by category and by vendor; sales by month and by customer
@@ -308,15 +313,16 @@ and totals, same as the other tabs.
 | 4 | Allow optional online AI receipt reading? | Mid 1.3.0 part C | **Decided 2026-10-24: no, offline only for now**; revisit after the 20-real-receipt test |
 | 5 | Is the Expenses tab behind the PIN? | — | **Settled by 1.2.0's Locked by PIN:** a box for Expenses, off by default |
 | 6 | Cash-basis only (record when paid)? | 1.3.0 part B | Yes, the same as the annual statements today |
-| 7 | One shared Checks sheet for payroll and vendors, or separate sheets? | 1.6.0 schema | One shared sheet with a Type column |
+| 7 | One shared Checks sheet for payroll and vendors, or separate sheets? | 1.4.0 schema | One shared sheet with a Type column |
 | 8 | Add the Windows OCR packages (PyWinRT) to the app? | — | **Decided 2026-10-24: yes**, with the PowerShell fallback |
 | 9 | Read PDF receipts (pypdfium2, ~7 MB)? | — | **Decided 2026-10-24: yes** |
 | 10 | Highlight every new vendor for review? | — | **Decided 2026-10-24: yes**, until the vendor is known |
 | 11 | Nothing extra behind the PIN; owner locks the file if they want | — | **Decided 2026-10-24** (Company Settings explains how) |
 | 12 | Skip publishing 1.1.2 | — | **Decided 2026-10-24**: its changes shipped in 1.2.0 |
-| 14 | Owners: a pay type on Employees, or a separate list? | 1.4.0 B | A pay type "Owner" on Employees (one list of people, history kept) |
-| 15 | Mileage: standard rate or actual car costs? | 1.4.0 B | Standard rate (a setting, confirm yearly); actual costs stay ordinary expenses |
-| 16 | Phone photos: local upload page or a sync folder? | 1.5.0 B | Local page while the window is open; a phone sync folder as the fallback |
+| 14 | Owners: a pay type on Employees, or a separate list? | 1.3.0 | A pay type "Owner" on Employees (one list of people, history kept) |
+| 15 | Mileage: standard rate or actual car costs? | 1.3.0 | Standard rate (a setting, confirm yearly); actual costs stay ordinary expenses |
+| 16 | Phone photos: local upload page or a sync folder? | 1.3.0 | Local page while the window is open; a phone sync folder as the fallback |
+| 17 | Ship everything since 1.2.0 as one 1.3.0? | — | **Decided 2026-10-24**: no releases were published in between |
 
 ## 6. Risks and how we handle them
 
@@ -338,6 +344,6 @@ and totals, same as the other tabs.
 - Optional password-protected workbook (encrypted `.xlsx`), for owners who would trade "opens in GridCraft" for a
   locked file
 
-_Moved out of the parking lot 2026-10-24:_ bank statement import (1.5.0 A), mileage log and owners as a pay group
-(1.4.0 B), recurring expenses (1.4.0 A), phone photo upload (1.5.0 B), positive pay (1.6.0), invoices (1.7.0),
+_Moved out of the parking lot 2026-10-24:_ bank statement import (1.3.0), mileage log and owners as a pay group
+(1.3.0), recurring expenses (1.3.0), phone photo upload (1.3.0), positive pay (1.4.0), invoices (1.5.0),
 several businesses (2.0.0).

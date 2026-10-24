@@ -349,7 +349,7 @@ stored (collect W-9s).
 - `Expenses` sheet: `ExpenseID | Date | Vendor | VendorID | Category | Amount | Tax | PaymentMethod | CheckNumber |
   Memo | ReceiptFile | Status | Created`. Amount is the total paid, tax included; Tax is the part of it that was tax.
   Status `Approved` or `Draft` (scanned, not reviewed; drafts are left out of totals). IDs `X0001`, ... `VendorID` is
-  for the Vendors list (1.4.0). `Categories` sheet: the owner's list, seeded with the IRS Schedule C lines
+  for the Vendors list (1.3.0). `Categories` sheet: the owner's list, seeded with the IRS Schedule C lines
   (`expenses.DEFAULT_CATEGORIES`); a category typed on an expense is added to it. Schema version 4.
 - Receipts are never stored in the workbook: `expenses.file_receipt` copies the picture/PDF to
   `Receipts\<year>\<date> <vendor> <amount>.<ext>` next to the workbook (never overwriting; " (2)" etc.), and the
@@ -371,7 +371,7 @@ stored (collect W-9s).
   saves it for later. Scanner-folder receipts go straight in as drafts; double-clicking a draft opens the review.
   Nothing is approved without a person. Fully offline; no online AI reading.
 
-## Recurring expenses (1.4.0)
+## Recurring expenses (1.3.0)
 - Choosing **Repeats** (Monthly / Quarterly / Yearly) on an expense makes a `Recurring` entry (sheet `Recurring`:
   `RecurringID | Vendor | Category | Amount | PaymentMethod | Memo | Every | NextDate | Active | Day`) due one period
   later on the same day of the month (`Day`; the 31st falls back to the last day of shorter months).
@@ -379,7 +379,7 @@ stored (collect W-9s).
   `Expenses.RecurringID`), catching up missed periods; a period that already has an expense from it is never added
   twice. Expenses > Recurring… stops/restarts one (restarting starts from today) or skips its next time. Schema 5.
 
-## Mileage and owners (1.4.0)
+## Mileage and owners (1.3.0)
 - **Owner** pay type on Employees (`calc.is_owner`): a sole proprietor takes draws, so Pay & Checks never pays owners
   and annual (1099) statements leave them out; their time cards and history stay.
 - Expenses > **Mileage…**: the `Mileage` sheet (`TripID | Date | PersonID | Person | Purpose | From | To | Miles | Rate |

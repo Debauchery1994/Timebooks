@@ -61,7 +61,7 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   2 = 1.1.2: Employees SalaryBasis, TimeLog SalaryHours / HoursType, pay_hold_back
 #   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
 #   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
-#   5 = 1.4.0: Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
+#   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 SCHEMA_VERSION = 5
 META_KEYS = ("schema_version", "app_version")
 
