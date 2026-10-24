@@ -597,20 +597,21 @@ class FlowFrame(ttk.Frame):
             return
         if width <= 1:
             width = self.winfo_toplevel().winfo_width() or 1000
-        widths = tuple(g.winfo_reqwidth() for g in self.groups)
-        if self._last == (width, widths):
+        sizes = tuple((g.winfo_reqwidth(), g.winfo_reqheight()) for g in self.groups)
+        if self._last == (width, sizes):
             return
-        self._last = (width, widths)
-        row = col = x = 0
-        gap = scaled(self.gap)
-        for g, w in zip(self.groups, widths):
-            if col and x + w > width:
-                row, col, x = row + 1, 0, 0
-            g.grid(row=row, column=col, sticky="w", padx=(0, gap), pady=(0, scaled(4)))
+        self._last = (width, sizes)
+        # Each row is placed on its own (no shared grid columns), so a wide group wrapping to the next row can't
+        # push the groups of the row above off the edge.
+        x = y = row_h = 0
+        gap, vgap = scaled(self.gap), scaled(4)
+        for g, (w, h) in zip(self.groups, sizes):
+            if x and x + w > width:
+                x, y, row_h = 0, y + row_h + vgap, 0
+            g.place(x=x, y=y)
             x += w + gap
-            col += 1
-        for c in range(len(self.groups) + 1):
-            self.columnconfigure(c, weight=0)
+            row_h = max(row_h, h)
+        self.configure(height=y + row_h + vgap)
 
 
 def relayout_flows() -> None:

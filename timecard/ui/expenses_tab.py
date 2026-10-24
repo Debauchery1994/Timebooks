@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from .. import expenses, phone_upload, receipts_ocr, scanning
 from ..models import Expense, Trip
-from .common import MONTH_NAMES, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
+from .common import MONTH_NAMES, FlowFrame, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
 from .bank_dialog import BankImportDialog
 from .pin import PinLockable
 
@@ -479,8 +479,32 @@ class ExpensesTab(PinLockable, ttk.Frame):
         self.app = app
         self.sort_col, self.sort_desc = "date", False
 
+        # Buttons on their own row, wrapping on a narrow window (nothing hidden); the filters on the row below.
+        bar = FlowFrame(self, gap=14)
+        bar.pack(fill="x")
+        g = bar.group()
+        scan = ttk.Menubutton(g, text="Scan Receipt ▾", style="Accent.TButton")
+        menu = tk.Menu(scan, tearoff=0)
+        menu.add_command(label="From the scanner…", command=self.scan_from_scanner)
+        menu.add_command(label="From a photo or PDF…", command=self.scan_from_file)
+        menu.add_command(label="From my phone (Wi-Fi)…", command=self.scan_from_phone)
+        menu.add_separator()
+        menu.add_command(label="Check Scanner Folder", command=self.check_scanner_folder)
+        menu.add_command(label="Choose Scanner Folder…", command=self.choose_scanner_folder)
+        scan["menu"] = menu
+        scan.pack(side="left")
+        ttk.Button(g, text="Phone Photos…", command=self.scan_from_phone).pack(side="left", padx=(6, 0))
+        g = bar.group()
+        for text, cmd in (("Add Expense…", self.add), ("Edit…", self.edit), ("View Receipt", self.view_receipt),
+                          ("Delete", self.delete)):
+            ttk.Button(g, text=text, command=cmd).pack(side="left", padx=(0, 6))
+        g = bar.group()
+        for text, cmd in (("Bank Statement…", self.import_bank), ("Recurring…", self.manage_recurring),
+                          ("Mileage…", self.open_mileage)):
+            ttk.Button(g, text=text, command=cmd).pack(side="left", padx=(0, 6))
+
         top = ttk.Frame(self)
-        top.pack(fill="x")
+        top.pack(fill="x", pady=(6, 0))
         ttk.Label(top, text="Month").pack(side="left")
         self.cb_month = ttk.Combobox(top, state="readonly", width=12, values=["All year"] + MONTH_NAMES)
         self.cb_month.current(0)
@@ -494,23 +518,6 @@ class ExpensesTab(PinLockable, ttk.Frame):
         for w in (self.cb_month, self.cb_cat):
             w.bind("<<ComboboxSelected>>", lambda e: self.reload())
         self.e_vendor.bind("<KeyRelease>", lambda e: self.reload())
-        ttk.Button(top, text="Delete", command=self.delete).pack(side="right")
-        ttk.Button(top, text="View Receipt", command=self.view_receipt).pack(side="right", padx=6)
-        ttk.Button(top, text="Edit…", command=self.edit).pack(side="right")
-        ttk.Button(top, text="Bank Statement…", command=self.import_bank).pack(side="right", padx=(6, 0))
-        ttk.Button(top, text="Mileage…", command=self.open_mileage).pack(side="right", padx=(6, 0))
-        ttk.Button(top, text="Recurring…", command=self.manage_recurring).pack(side="right", padx=(6, 0))
-        ttk.Button(top, text="Add Expense…", command=self.add).pack(side="right", padx=6)
-        scan = ttk.Menubutton(top, text="Scan Receipt ▾", style="Accent.TButton")
-        menu = tk.Menu(scan, tearoff=0)
-        menu.add_command(label="From the scanner…", command=self.scan_from_scanner)
-        menu.add_command(label="From a photo or PDF…", command=self.scan_from_file)
-        menu.add_command(label="From my phone (Wi-Fi)…", command=self.scan_from_phone)
-        menu.add_separator()
-        menu.add_command(label="Check Scanner Folder", command=self.check_scanner_folder)
-        menu.add_command(label="Choose Scanner Folder…", command=self.choose_scanner_folder)
-        scan["menu"] = menu
-        scan.pack(side="right")
 
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, pady=(10, 0))
