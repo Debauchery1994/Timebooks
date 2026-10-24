@@ -26,6 +26,13 @@ Read `DESIGN.md` first: it is the contract (workbook schema, business rules, che
    after the idle timeout, and can't be reached by keyboard focus while locked. There is one PIN for the whole app.
 5. **Check numbers** come from `Company.next_check_number`, never repeat, and voided checks are excluded from totals.
 6. Updates only download from this repo's GitHub releases and verify size/SHA-256 before running.
+7. **Dialogs: never read a widget after the dialog has closed.** `ModalDialog.show()` returns after `ok()` has
+   destroyed the window, so any `dlg.w[...]`, `dlg.<entry/combobox/var>.get()` or widget access after `show()` raises
+   `TclError: invalid command name ...` and the save never happens (1.3.0 shipped this: every expense-form save failed).
+   Values needed after closing must be copied to plain attributes in `apply()` (e.g. `self.repeats`). For every new
+   or changed dialog, trace the caller's code after `show()` returns. Also check the order of side effects: nothing
+   irreversible (moving or renaming a receipt file, writing settings) should happen before the step that can still
+   fail or be cancelled.
 
 ## How to review
 - Scope is given in the prompt (usually `git log <last-release>..HEAD`). Read every changed hunk with
@@ -33,6 +40,9 @@ Read `DESIGN.md` first: it is the contract (workbook schema, business rules, che
 - For each suspected bug, **verify it** before reporting: trace the real call path, and where possible prove it with a
   small Python snippet run with `.venv\Scripts\python` (pure logic only: calc, storage, models with temp files).
 - Run the unit tests: `.venv\Scripts\python -m unittest discover -s tests` (from the repo root).
+- For rule 7, a quick sweep helps: `grep -n "\.show()" timecard/ui/*.py`, then read what each caller does with the
+  dialog afterwards (only `result` and plain attributes set in `apply()` are safe). Report any widget read after
+  `show()` as high severity: the action silently never completes for the owner.
 - **Do not open GUI windows** (no `App()`, no smoke scripts, no tkinter mainloop): they take over the owner's screen.
 - Never open, read or modify the owner's real workbooks or settings (`Documents\TimeCard Pro`, `Documents\TimeBooks`,
   `%APPDATA%\TimeCardPro`, `%APPDATA%\TimeBooks`). Use temporary directories only, and set `TIMEBOOKS_SETTINGS_DIR` and
