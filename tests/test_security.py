@@ -14,7 +14,7 @@ from timecard import security
 class PinTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        patcher = mock.patch.dict(os.environ, {"TIMECARDPRO_SETTINGS_DIR": self._tmp.name})
+        patcher = mock.patch.dict(os.environ, {"TIMEBOOKS_SETTINGS_DIR": self._tmp.name})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self._tmp.cleanup)

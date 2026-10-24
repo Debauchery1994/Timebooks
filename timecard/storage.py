@@ -232,14 +232,14 @@ class TimecardBook:
 
     @property
     def from_newer_app(self) -> bool:
-        """The file was saved by a newer TimeCard Pro whose sheets/columns this copy doesn't know, so saving over it
+        """The file was saved by a newer TimeBooks whose sheets/columns this copy doesn't know, so saving over it
         would lose them. save() refuses to write it back to the same file."""
         return self.schema_version > SCHEMA_VERSION
 
     def newer_message(self) -> str:
         by = f" ({self.saved_by})" if self.saved_by else ""
-        return (f"{Path(self.path).name if self.path else 'This workbook'} was saved by a newer version of TimeCard "
-                f"Pro{by}. This copy can show it but can't save over it without losing information. Update this copy "
+        return (f"{Path(self.path).name if self.path else 'This workbook'} was saved by a newer version of TimeBooks"
+                f"{by}. This copy can show it but can't save over it without losing information. Update this copy "
                 "with Help > Check for Updates.")
 
     @classmethod
@@ -265,7 +265,7 @@ class TimecardBook:
         stamp = cls._stamp(p)
         names = {n.lower(): n for n in wb.sheetnames}
         if "employees" not in names and "timelog" not in names:
-            raise WorkbookError(f"{p.name} is not a TimeCard Pro workbook "
+            raise WorkbookError(f"{p.name} is not a TimeBooks workbook "
                                 "(it has no Employees or TimeLog sheet).")
         book = cls(path=p)
 

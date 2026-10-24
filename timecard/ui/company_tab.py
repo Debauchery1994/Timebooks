@@ -217,7 +217,7 @@ class CompanyTab(PinLockable, ttk.Frame):
                        "people only (hourly pay comes from Time Card hours).").grid(
             row=rows["Features"], column=0, columnspan=2, sticky="w", pady=(8, 0))
         ttk.Label(frames["Locked by PIN"], style="Muted.TLabel", wraplength=420, justify="left",
-                  text="Locked tabs ask for the PIN set up when TimeCard Pro was installed (File > Change PIN to "
+                  text="Locked tabs ask for the PIN set up when TimeBooks was installed (File > Change PIN to "
                        "change it) and lock again when you leave them or after 5 minutes. Company Settings is "
                        "always locked.").grid(row=rows["Locked by PIN"], column=0, columnspan=2, sticky="w",
                                               pady=(8, 0))

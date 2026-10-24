@@ -19,7 +19,7 @@ from timecard import __version__, paths, updates
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "packaging"))
 import installer  # noqa: E402
 
-SETUP_URL = f"https://github.com/{updates.REPO}/releases/download/v9.0.0/TimeCardPro-Setup.exe"
+SETUP_URL = f"https://github.com/{updates.REPO}/releases/download/v9.0.0/TimeBooks-Setup.exe"
 PAYLOAD = b"MZ fake installer " * 5000
 
 
@@ -34,9 +34,9 @@ class FakeResponse(io.BytesIO):
 
 def release_json(tag="v9.0.0", assets=None, body="Bug fixes") -> bytes:
     if assets is None:
-        assets = [{"name": "TimeCardPro-Setup.exe", "browser_download_url": SETUP_URL, "size": len(PAYLOAD),
+        assets = [{"name": "TimeBooks-Setup.exe", "browser_download_url": SETUP_URL, "size": len(PAYLOAD),
                    "digest": "sha256:" + hashlib.sha256(PAYLOAD).hexdigest()}]
-    return json.dumps({"tag_name": tag, "name": f"TimeCard Pro {tag}", "body": body,
+    return json.dumps({"tag_name": tag, "name": f"TimeBooks {tag}", "body": body,
                        "html_url": f"https://github.com/{updates.REPO}/releases/tag/{tag}",
                        "assets": assets}).encode()
 
@@ -91,7 +91,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(info.sha256, hashlib.sha256(PAYLOAD).hexdigest())
         self.assertEqual(info.notes, "Bug fixes")
         self.assertEqual(op.seen[0].full_url, updates.API_URL)
-        self.assertIn("TimeCardPro", op.seen[0].get_header("User-agent"))
+        self.assertIn("TimeBooks", op.seen[0].get_header("User-agent"))
 
     def test_same_or_older_release_is_none(self) -> None:
         self.assertIsNone(updates.check("9.0.0", opener_returning(release_json())))
@@ -128,7 +128,7 @@ class DownloadTests(unittest.TestCase):
     def test_downloads_and_verifies(self) -> None:
         seen = []
         out = self.dl(progress=lambda d, t: seen.append((d, t)))
-        self.assertEqual(out, self.dir / "TimeCardPro-Setup-9.0.0.exe")
+        self.assertEqual(out, self.dir / "TimeBooks-Setup-9.0.0.exe")
         self.assertEqual(out.read_bytes(), PAYLOAD)
         self.assertEqual(seen[-1], (len(PAYLOAD), len(PAYLOAD)))
         self.assertFalse(list(self.dir.glob("*.part")))
@@ -179,27 +179,29 @@ class InstallerUpdateTests(unittest.TestCase):
         payload_dir = self.root / "res"
         payload_dir.mkdir()
         with zipfile.ZipFile(payload_dir / "payload.zip", "w") as z:
-            z.writestr("TimeCardPro.exe", "new exe")
+            z.writestr("TimeBooks.exe", "new exe")
             z.writestr("_internal/lib.dll", "new lib")
         for p in (mock.patch.object(installer, "resource", lambda name: payload_dir / name),
-                  mock.patch.dict(os.environ, {"TIMECARDPRO_SETTINGS_DIR": str(self.root / "unused")})):
+                  mock.patch.dict(os.environ, {"TIMEBOOKS_SETTINGS_DIR": str(self.root / "unused"),
+                                               "APPDATA": str(self.root / "AppData")}),   # never the real one
+                  mock.patch.object(paths, "_migrated", False)):
             p.start()
             self.addCleanup(p.stop)
 
     def test_portable_copy_is_updated_in_place_and_data_kept(self) -> None:
         folder = self.root / "USB" / paths.PORTABLE_FOLDER
         (folder / "_internal").mkdir(parents=True)
-        (folder / "TimeCardPro.exe").write_text("old exe")
+        (folder / "TimeBooks.exe").write_text("old exe")
         (folder / "_internal" / "old.dll").write_text("old")
         (folder / paths.PORTABLE_MARKER).write_text("portable")
         wb = paths.portable_data_dir(folder) / "Workbooks" / "Acme 2026.xlsx"
         wb.parent.mkdir(parents=True)
         wb.write_text("workbook")
-        exe = installer.update(folder / "TimeCardPro.exe")
+        exe = installer.update(folder / "TimeBooks.exe")
         self.assertEqual(exe.read_text(), "new exe")
         self.assertFalse((folder / "_internal" / "old.dll").exists())
         self.assertEqual(wb.read_text(), "workbook")
-        self.assertEqual(Path(os.environ["TIMECARDPRO_SETTINGS_DIR"]),
+        self.assertEqual(Path(os.environ["TIMEBOOKS_SETTINGS_DIR"]),
                          paths.portable_data_dir(folder) / "Settings")
 
     def test_installed_copy_keeps_existing_shortcut_choices(self) -> None:
@@ -207,7 +209,7 @@ class InstallerUpdateTests(unittest.TestCase):
         start.write_text("lnk")   # Start Menu shortcut exists, Desktop one was removed by the user
         with mock.patch.object(installer, "DESKTOP", desktop), mock.patch.object(installer, "START_MENU", start), \
                 mock.patch.object(installer, "install", return_value=Path("x.exe")) as inst:
-            installer.update(self.root / "Programs" / "TimeCardPro" / "TimeCardPro.exe")
+            installer.update(self.root / "Programs" / "TimeBooks" / "TimeBooks.exe")
         inst.assert_called_once_with(False, True)
 
     def test_retries_while_files_are_locked(self) -> None:
@@ -219,11 +221,11 @@ class InstallerUpdateTests(unittest.TestCase):
                 raise PermissionError("in use")
             return Path("x.exe")
         with mock.patch.object(installer, "install", side_effect=flaky):
-            installer.update(self.root / "TimeCardPro.exe", delay_s=0)
+            installer.update(self.root / "TimeBooks.exe", delay_s=0)
         self.assertEqual(len(calls), 3)
         with mock.patch.object(installer, "install", side_effect=PermissionError("in use")), \
                 self.assertRaises(PermissionError):
-            installer.update(self.root / "TimeCardPro.exe", retries=2, delay_s=0)
+            installer.update(self.root / "TimeBooks.exe", retries=2, delay_s=0)
 
     def test_wait_for_exit_of_finished_process(self) -> None:
         import subprocess

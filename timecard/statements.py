@@ -240,7 +240,7 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
 
     doc = SimpleDocTemplate(str(out), pagesize=letter, leftMargin=0.6 * inch, rightMargin=0.6 * inch,
                             topMargin=0.6 * inch, bottomMargin=0.7 * inch,
-                            title=f"{co.company_name} Annual Statements {year}", author="TimeCard Pro")
+                            title=f"{co.company_name} Annual Statements {year}", author="TimeBooks")
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return out
 

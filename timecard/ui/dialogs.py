@@ -161,7 +161,7 @@ class BackupDialog(ModalDialog):
         if not d or not Path(d).is_dir():
             messagebox.showinfo("Backup", "Choose a backup folder first.", parent=self)
             return
-        folder = Path(d) / backup.BACKUP_ROOT_NAME
+        folder = backup.backup_root(d)
         open_file(folder if folder.is_dir() else Path(d))
 
     def apply(self) -> bool:
@@ -195,7 +195,7 @@ class ExportStatementsDialog(ModalDialog):
         self.v_dir = tk.StringVar(value="")
         ttk.Entry(row, textvariable=self.v_dir, width=48).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="Browse…", command=self._browse).pack(side="left", padx=(6, 0))
-        ttk.Label(f, text="Leave blank to use the TimeCard Pro Output folder next to the workbook.",
+        ttk.Label(f, text="Leave blank to use the TimeBooks Output folder next to the workbook.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
         return first
 

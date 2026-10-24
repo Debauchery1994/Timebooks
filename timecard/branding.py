@@ -29,7 +29,7 @@ def normalize_logo(data: bytes) -> bytes:
         img = Image.open(io.BytesIO(data))
         img.load()
     except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("That file isn't a picture TimeCard Pro can read. Use a PNG, JPG or BMP.") from exc
+        raise ValueError("That file isn't a picture TimeBooks can read. Use a PNG, JPG or BMP.") from exc
     img = img.convert("RGBA")
     bbox = img.getbbox()  # trim fully transparent borders
     if bbox:

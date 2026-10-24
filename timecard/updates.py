@@ -1,6 +1,6 @@
-"""Check GitHub for a newer TimeCard Pro release and download its Setup.exe.
+"""Check GitHub for a newer TimeBooks release and download its Setup.exe.
 
-A release is a GitHub Release on REPO tagged ``vX.Y.Z`` with ``TimeCardPro-Setup.exe`` attached. The app
+A release is a GitHub Release on REPO tagged ``vX.Y.Z`` with ``TimeBooks-Setup.exe`` attached. The app
 compares the tag with ``__version__``; installing is done by the downloaded Setup.exe (``--update``), which
 waits for the app to close, replaces the program files (workbooks, PIN and settings are kept) and restarts it.
 Nothing about the user or their data is sent: the only request is an anonymous read of the public release list.
@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 REPO = "Debauchery1994/Timebooks"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
-SETUP_ASSET = "TimeCardPro-Setup.exe"
+SETUP_ASSET = "TimeBooks-Setup.exe"
 TIMEOUT = 15
 _CHUNK = 64 * 1024
 # Release downloads start on github.com and redirect to GitHub's asset storage.
@@ -37,7 +37,7 @@ class ReleaseInfo:
     name: str             # release title
     notes: str            # release description (Markdown text)
     page_url: str         # release page in the browser
-    setup_url: str        # TimeCardPro-Setup.exe download, "" if the release has no installer attached
+    setup_url: str        # TimeBooks-Setup.exe download, "" if the release has no installer attached
     setup_size: int = 0
     sha256: str = ""      # from GitHub's asset digest when available
 
@@ -56,7 +56,7 @@ def is_newer(latest: str, current: str) -> bool:
 
 
 def _get(url: str, opener: Callable, accept: str):
-    req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "TimeCardPro-Updater"})
+    req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "TimeBooks-Updater"})
     return opener(req, timeout=TIMEOUT)
 
 
@@ -116,7 +116,7 @@ def download(info: ReleaseInfo, dest_dir: str | Path, progress: Callable[[int, i
                           "downloaded.")
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    out = dest_dir / f"TimeCardPro-Setup-{info.version}.exe"
+    out = dest_dir / f"TimeBooks-Setup-{info.version}.exe"
     part = out.with_suffix(".part")
     sha = hashlib.sha256()
     done = 0

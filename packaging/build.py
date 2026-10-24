@@ -1,7 +1,7 @@
-"""Build TimeCard Pro: the app (one-folder) and a single-file Setup.exe installer.
+"""Build TimeBooks: the app (one-folder) and a single-file Setup.exe installer.
 
 Run from the timecard/ directory:  ..\\.venv\\Scripts\\python packaging\\build.py
-Output: dist\\TimeCardPro-Setup.exe
+Output: dist\\TimeBooks-Setup.exe
 """
 from __future__ import annotations
 
@@ -26,20 +26,20 @@ def main() -> None:
     shutil.rmtree(DIST, ignore_errors=True)
     icon = str(PKG / "timecard.ico")
 
-    pyinstaller("--name", "TimeCardPro", "--windowed", "--onedir", "--icon", icon,
+    pyinstaller("--name", "TimeBooks", "--windowed", "--onedir", "--icon", icon,
                 "--add-data", f"{icon};.", "--paths", str(ROOT),
                 "--distpath", str(DIST / "app"), str(PKG / "run_timecard.py"))
 
     payload = BUILD / "payload.zip"
-    app_dir = DIST / "app" / "TimeCardPro"
+    app_dir = DIST / "app" / "TimeBooks"
     with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as z:
         for f in app_dir.rglob("*"):
             z.write(f, f.relative_to(app_dir))
 
-    pyinstaller("--name", "TimeCardPro-Setup", "--windowed", "--onefile", "--icon", icon,
+    pyinstaller("--name", "TimeBooks-Setup", "--windowed", "--onefile", "--icon", icon,
                 "--add-data", f"{payload};.", "--add-data", f"{icon};.", "--paths", str(ROOT),
                 "--distpath", str(DIST), str(PKG / "installer.py"))
-    print("Built", DIST / "TimeCardPro-Setup.exe")
+    print("Built", DIST / "TimeBooks-Setup.exe")
 
 
 if __name__ == "__main__":

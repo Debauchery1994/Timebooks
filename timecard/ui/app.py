@@ -21,7 +21,8 @@ from ..models import Company
 from .. import APP_NAME, __version__, backup, branding, calc, paths, security, updates
 from ..storage import TimecardBook, WorkbookError
 from .common import (
-    AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OUTPUT_DIR_NAME, P, SETTINGS_DIR, Settings,
+    AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P, SETTINGS_DIR,
+    Settings,
     TEXT_SCALES, THEMES, THEME_NAMES, _appearance, _apply_brand_palette, _brand, apply_appearance, apply_tk_colors,
     documents_dir, is_salaried, log, logo_photo, open_file, recent_labels, relayout_flows, safe_filename, scaled,
     setup_logging, tag_role,
@@ -38,7 +39,7 @@ from .yearlog_tab import YearLogTab
 
 class App(tk.Tk):
     def __init__(self, load_last: bool = True):
-        super().__init__(className="TimeCardPro")
+        super().__init__(className="TimeBooks")
         setup_logging()
         self.settings = Settings()
         self.book: TimecardBook | None = None
@@ -397,7 +398,7 @@ class App(tk.Tk):
             # GridCraft / Excel / another PC changed the file: never overwrite that without asking
             self._autosave_paused = True
             log.warning("Autosave paused: %s changed outside the app", self.book.path)
-            self.status(f"{self.book.path.name} was changed outside TimeCard Pro, so automatic saving is paused. "
+            self.status(f"{self.book.path.name} was changed outside TimeBooks, so automatic saving is paused. "
                         "Open it again to see those changes, or use File > Save to replace them.", error=True)
             return
         self._snapshot_before_first_autosave()
@@ -407,7 +408,7 @@ class App(tk.Tk):
             log.warning("Autosave failed: %s", exc)
             self._autosave_failed = True
             self.status(f"Could not save automatically ({exc}). Close the workbook in other programs; "
-                        "TimeCard Pro will try again.", error=True)
+                        "TimeBooks will try again.", error=True)
             self._schedule_autosave(AUTOSAVE_RETRY_MS)
             return
         self._unbacked_autosave = True
@@ -418,7 +419,7 @@ class App(tk.Tk):
 
     def _snapshot_before_first_autosave(self) -> None:
         """Keep a copy of the workbook as it was opened, so automatic saving can always be undone. Goes to the
-        backup folder when one is set, else a "TimeCard Pro Backups" folder next to the workbook."""
+        backup folder when one is set, else a "TimeBooks Backups" folder next to the workbook."""
         if self._snapshot_taken or self.book is None or self.book.path is None:
             return
         self._snapshot_taken = True
@@ -630,7 +631,7 @@ class App(tk.Tk):
         if book.from_newer_app:
             log.warning("Opened a workbook from a newer version (schema %s, saved by %s)",
                         book.schema_version, book.saved_by or "?")
-            self.status("Saved by a newer version of TimeCard Pro: changes here can't be saved over it.", error=True)
+            self.status("Saved by a newer version of TimeBooks: changes here can't be saved over it.", error=True)
             messagebox.showwarning(APP_NAME, book.newer_message() + "\n\nUntil then, anything you change here can "
                                    "only be kept with File > Save As (a separate copy).", parent=self)
         return True
@@ -696,8 +697,8 @@ class App(tk.Tk):
                                    "Save As to save a separate copy.", parent=self)
             return False
         if self.book.changed_on_disk() and not messagebox.askyesno(
-                APP_NAME, f"{self.book.path.name} was changed outside TimeCard Pro (for example in GridCraft) "
-                "since it was opened here.\n\nSaving replaces those changes with what is shown in TimeCard Pro. "
+                APP_NAME, f"{self.book.path.name} was changed outside TimeBooks (for example in GridCraft) "
+                "since it was opened here.\n\nSaving replaces those changes with what is shown in TimeBooks. "
                 "To keep them instead, choose No and open the workbook again.\n\nReplace the file?", parent=self):
             return False
         try:
@@ -780,7 +781,7 @@ class App(tk.Tk):
                 subprocess.Popen([str(GRIDCRAFT_EXE), path], close_fds=True)
             else:
                 os.startfile(path)  # type: ignore[attr-defined]
-            self.status("Opened in GridCraft. Close it there before saving again from TimeCard Pro.")
+            self.status("Opened in GridCraft. Close it there before saving again from TimeBooks.")
         except OSError as exc:
             messagebox.showerror(APP_NAME, f"Could not launch GridCraft:\n{exc}", parent=self)
 
@@ -792,7 +793,7 @@ class App(tk.Tk):
                 return None
             if not self.save_as():
                 return None
-        d = Path(self.book.path).parent / OUTPUT_DIR_NAME
+        d = paths.kept_folder(Path(self.book.path).parent, OUTPUT_DIR_NAME, OLD_OUTPUT_DIR_NAME)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -918,8 +919,8 @@ class App(tk.Tk):
             return
         # Portable copies keep the download on their own drive; installed copies use the temp folder.
         dest = (paths.portable_data_dir() / "Updates" if paths.is_portable()
-                else Path(tempfile.gettempdir()) / "TimeCardPro-Update")
-        for old in dest.glob("TimeCardPro-Setup-*.exe") if dest.is_dir() else ():
+                else Path(tempfile.gettempdir()) / "TimeBooks-Update")
+        for old in dest.glob("TimeBooks-Setup-*.exe") if dest.is_dir() else ():
             old.unlink(missing_ok=True)
         setup = DownloadDialog(self, info, dest).show()
         if setup is None:

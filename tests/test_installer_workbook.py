@@ -1,4 +1,5 @@
-"""Tests for the default workbook folder (Documents\\TimeCard Pro) and the workbook Setup creates."""
+"""Tests for the default workbook folder (Documents\\TimeBooks, or an existing Documents\\TimeCard Pro) and the
+workbook Setup creates."""
 from __future__ import annotations
 
 import json
@@ -26,7 +27,7 @@ class DefaultFolderTests(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.docs = self.root / "OneDrive" / "Documents"
         self.docs.mkdir(parents=True)
-        self.app = self.root / "Programs" / "TimeCardPro"
+        self.app = self.root / "Programs" / "TimeBooks"
         self.app.mkdir(parents=True)
         for p in (mock.patch.object(paths, "windows_documents", lambda: self.docs),
                   mock.patch.object(paths, "app_dir", lambda: self.app)):
@@ -35,17 +36,22 @@ class DefaultFolderTests(unittest.TestCase):
 
     def test_installed_default_is_created_inside_real_documents(self) -> None:
         d = paths.documents_dir()
-        self.assertEqual(d, self.docs / "TimeCard Pro")
+        self.assertEqual(d, self.docs / "TimeBooks")
         self.assertTrue(d.is_dir())
 
     def test_falls_back_to_home_documents(self) -> None:
         with mock.patch.object(paths, "windows_documents", lambda: None), \
                 mock.patch.object(Path, "home", lambda: self.root):
-            self.assertEqual(paths.default_workbook_dir(), self.root / "Documents" / "TimeCard Pro")
+            self.assertEqual(paths.default_workbook_dir(), self.root / "Documents" / "TimeBooks")
+
+    def test_an_existing_timecard_pro_folder_keeps_the_workbooks(self) -> None:
+        (self.docs / "TimeCard Pro").mkdir()
+        self.assertEqual(paths.documents_dir(), self.docs / "TimeCard Pro")
+        self.assertFalse((self.docs / "TimeBooks").exists())
 
     def test_preview_does_not_create_the_folder(self) -> None:
-        self.assertEqual(paths.default_workbook_dir(), self.docs / "TimeCard Pro")
-        self.assertFalse((self.docs / "TimeCard Pro").exists())
+        self.assertEqual(paths.default_workbook_dir(), self.docs / "TimeBooks")
+        self.assertFalse((self.docs / "TimeBooks").exists())
         self.assertEqual(paths.default_workbook_dir(self.app, portable=True), self.app / "Data" / "Workbooks")
 
     def test_workbook_filename_is_safe(self) -> None:
@@ -66,8 +72,8 @@ class SetupWorkbookTests(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.docs = self.root / "Documents"
         self.docs.mkdir()
-        self.settings = self.root / "AppData" / "TimeCardPro"
-        self.app = self.root / "Programs" / "TimeCardPro"
+        self.settings = self.root / "AppData" / "TimeBooks"
+        self.app = self.root / "Programs" / "TimeBooks"
         self.app.mkdir(parents=True)
         p = mock.patch.object(paths, "windows_documents", lambda: self.docs)
         p.start()
@@ -78,7 +84,7 @@ class SetupWorkbookTests(unittest.TestCase):
 
     def test_creates_workbook_and_app_opens_it_first(self) -> None:
         wb = installer.create_workbook("Acme LLC", self.settings, self.app)
-        self.assertEqual(wb, self.docs / "TimeCard Pro" / f"Acme LLC Timecards {YEAR}.xlsx")
+        self.assertEqual(wb, self.docs / "TimeBooks" / f"Acme LLC Timecards {YEAR}.xlsx")
         book = TimecardBook.load(wb)
         self.assertEqual(book.company.company_name, "Acme LLC")
         self.assertEqual(book.company.year, YEAR)
@@ -130,7 +136,7 @@ class SetupWorkbookTests(unittest.TestCase):
         stored = json.loads((settings / "settings.json").read_text(encoding="utf-8"))["last_workbook"]
         self.assertTrue(stored.startswith("portable:"))   # survives a drive-letter change
         self.assertEqual(installer.existing_workbook(settings, target), wb.resolve())
-        self.assertFalse((self.docs / "TimeCard Pro").exists())   # nothing written to the computer
+        self.assertFalse((self.docs / "TimeBooks").exists())   # nothing written to the computer
 
 
 if __name__ == "__main__":

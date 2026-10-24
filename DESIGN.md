@@ -1,4 +1,4 @@
-# TimeCard Pro — design contract
+# TimeBooks — design contract
 
 Windows desktop app (Python 3.15 + tkinter/ttk) that tracks hours worked per employee for a
 calendar year, stores everything in a GridCraft-compatible `.xlsx` workbook (the "client file"),
@@ -6,7 +6,7 @@ runs payroll and prints checks to PDF. Modeled on timecardcalculator.net (weekly
 punches, break deduction, daily/weekly totals, overtime).
 
 Packaging: PyInstaller one-folder build, installed per-user to
-`%LOCALAPPDATA%\Programs\TimeCardPro` with Start Menu + Desktop shortcuts.
+`%LOCALAPPDATA%\Programs\TimeBooks` with Start Menu + Desktop shortcuts.
 
 Dependencies (venv at `../.venv`): `openpyxl`, `reportlab`. Standard library otherwise.
 Run from source: `..\.venv\Scripts\python -m timecard` (package dir `timecard/timecard/`).
@@ -217,13 +217,13 @@ stored (collect W-9s).
 
 ## Portable mode (`paths.py`) and backups (`backup.py`)
 - **Portable:** Setup.exe → "Portable copy on a USB or external drive" extracts the app to
-  `<drive>\TimeCard Pro Portable\` with `portable.txt`. When that marker sits next to TimeCardPro.exe, settings, PIN,
+  `<drive>\TimeBooks Portable\` with `portable.txt`. When that marker sits next to TimeBooks.exe, settings, PIN,
   log and the default workbook folder are `Data\Settings` and `Data\Workbooks` on the drive; nothing is written to
   the computer (no shortcuts/registry). Paths on the program's drive are stored as `portable:<relative>` so a new
   drive letter still works. Updating a portable copy replaces `_internal` + the exe only; `Data` is never touched.
 - **Backups:** Employees tab → Backup… (behind the PIN). Folder = any synced folder; "Use Google Drive" detects
   Google Drive for desktop (`G:\My Drive`, `~\Google Drive\My Drive`, …). Copies go to
-  `<folder>\TimeCard Pro Backups\<workbook>\<workbook> YYYY-MM-DD HHMMSS.xlsx`, newest N kept (default 30).
+  `<folder>\TimeBooks Backups\<workbook>\<workbook> YYYY-MM-DD HHMMSS.xlsx`, newest N kept (default 30).
   Optional automatic backup after every save; a missing drive only shows a status-bar warning.
   Google sign-in/API was deliberately not used (needs an OAuth app + Google verification).
 
@@ -240,17 +240,18 @@ stored (collect W-9s).
 - Help → **Check for Updates…**, plus "Check for updates at startup" (default on; frozen builds only, at most once a
   day, silent unless a newer version that wasn't skipped exists; errors only logged).
 - Source of truth: `GET https://api.github.com/repos/Debauchery1994/Timebooks/releases/latest` (anonymous; the repo is
-  public). Tag `vX.Y.Z` compared numerically with `__version__`; asset `TimeCardPro-Setup.exe`.
+  public). Tag `vX.Y.Z` compared numerically with `__version__`; asset `TimeBooks-Setup.exe`.
 - Dialog: version, release notes, View on GitHub, **Download and Install / Skip This Version / Later**.
 - Download only from `https://github.com/<repo>/releases/download/…` (redirects to GitHub asset hosts only); size
-  and GitHub's `sha256` asset digest are verified before running. Installed copies download to `%TEMP%\TimeCardPro-Update`,
+  and GitHub's `sha256` asset digest are verified before running. Installed copies download to `%TEMP%\TimeBooks-Update`,
   portable copies to `Data\Updates` on the drive.
-- The app asks to save, starts `Setup.exe --update <TimeCardPro.exe> --wait-pid <pid>` and closes. The installer waits
+- The app asks to save, starts `Setup.exe --update <TimeBooks.exe> --wait-pid <pid>` and closes. The installer waits
   for that process, updates the same copy (portable in place, `Data` untouched; installed copy keeps whichever
   shortcuts exist), retries while files are locked, then restarts the app. Nothing about the user is sent.
 
 ## Default workbook folder and the workbook Setup creates
-- Installed copies keep workbooks in **Documents\TimeCard Pro** (`paths.default_workbook_dir`), created automatically;
+- Installed copies keep workbooks in **Documents\TimeBooks**, or the Documents\TimeCard Pro folder already there
+  (`paths.default_workbook_dir`), created automatically;
   Documents is the real known folder from Windows (`SHGetKnownFolderPath`), so a OneDrive-redirected Documents is used.
   Portable copies keep `Data\Workbooks` on the drive. Every New/Save As/Open/export dialog starts there.
   Never inside the program folder: updates replace it and uninstall deletes it.
@@ -268,7 +269,7 @@ stored (collect W-9s).
 - Autosave never overwrites outside edits: the book remembers the file's (mtime, size) at load/save
   (`TimecardBook.changed_on_disk`). If it changed (GridCraft, Excel, another PC) autosave pauses with a status-bar
   message, and File → Save asks before replacing the file. Before the first autosave of each opened book a copy of the
-  file as opened goes to the backup folder (or `TimeCard Pro Backups` next to the workbook), so autosave can be undone.
+  file as opened goes to the backup folder (or `TimeBooks Backups` next to the workbook), so autosave can be undone.
 - Changing the pay period (Company Settings, or a New Year workbook carrying people over) clears salaries entered
   per pay period, after a warning, so they are re-entered for the new schedule.
 - **Pay timing** (`Company.pay_hold_back`, Company Settings → Pay): `none` (default for new workbooks; workbooks from
@@ -330,3 +331,12 @@ stored (collect W-9s).
 - With time cards off, Pay & Checks pays salaried people every period (no hours, memo without hours) and notes that
   hourly people aren't paid there. Setup asks "What does your business need?" and sets both switches in the first
   workbook (`--no-timecards` / `--no-payroll` for a silent install).
+
+## Renamed from TimeCard Pro (1.3.0)
+- The app, installer, shortcuts, window and printouts say **TimeBooks**: `TimeBooks.exe`, `TimeBooks-Setup.exe`,
+  `%LOCALAPPDATA%\Programs\TimeBooks`, settings in `%APPDATA%\TimeBooks`. The Python package stays `timecard`.
+- No in-place upgrade from TimeCard Pro: 1.2.0 was only ever on the owner's PC, which uninstalls it and installs 1.3.0.
+  What carries over (`timecard.paths`): `%APPDATA%\TimeCardPro` (PIN, recent files, last workbook) is copied to
+  `%APPDATA%\TimeBooks` the first time settings are read, only when the new folder has no PIN or settings yet, and the
+  old folder is left alone. Folders the owner already has keep being used (`paths.kept_folder`): Documents\TimeCard
+  Pro for workbooks, "TimeCard Pro Backups" in a backup folder, "TimeCard Pro Output" next to a workbook.

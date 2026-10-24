@@ -81,7 +81,7 @@ def _new_canvas(out_path: Path, pagesize=letter, title: str = "") -> rl_canvas.C
         kw["pageCompression"] = PAGE_COMPRESSION
     c = rl_canvas.Canvas(str(out_path), pagesize=pagesize, **kw)
     c.setTitle(title)
-    c.setAuthor("TimeCard Pro")
+    c.setAuthor("TimeBooks")
     return c
 
 
@@ -838,7 +838,7 @@ def _doc(out: Path, pagesize, title: str) -> SimpleDocTemplate:
         kw["pageCompression"] = PAGE_COMPRESSION
     return SimpleDocTemplate(str(out), pagesize=pagesize, leftMargin=0.5 * inch, rightMargin=0.5 * inch,
                              topMargin=1.1 * inch, bottomMargin=0.65 * inch, title=title,
-                             author="TimeCard Pro", **kw)
+                             author="TimeBooks", **kw)
 
 
 def _header_fn(company: Company, title: str, subtitle: str, logo: bytes = b""):

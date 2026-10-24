@@ -1,25 +1,28 @@
-"""TimeCard Pro per-user installer / uninstaller.
+"""TimeBooks per-user installer / uninstaller.
 
 Built by build.py into a single Setup.exe that carries the app as an embedded zip (payload.zip).
-Always installs to its own folder, %LOCALAPPDATA%\\Programs\\TimeCardPro (no admin rights needed), no matter
+Always installs to its own folder, %LOCALAPPDATA%\\Programs\\TimeBooks (no admin rights needed), no matter
 where Setup.exe is run from. Optional Start Menu and Desktop shortcuts. Registers an entry in Settings > Apps so it
 can be uninstalled.
-Setup asks for the company name and creates this year's workbook in Documents\\TimeCard Pro, which the app then opens
+Setup asks for the company name and creates this year's workbook in Documents\\TimeBooks, which the app then opens
 first. Workbooks live wherever the user saves them and are never touched by updates or uninstall.
 
-Portable mode instead copies the program to "<drive>\\TimeCard Pro Portable" (e.g. a USB drive) with a
+Portable mode instead copies the program to "<drive>\\TimeBooks Portable" (e.g. a USB drive) with a
 portable.txt marker. That copy keeps its workbooks, PIN and settings in its own Data folder and writes
 nothing to the computer: no shortcuts, no registry entry, no uninstaller (delete the folder to remove it;
 Data holds the workbooks).
+
+Settings and the PIN from the TimeCard Pro days (%APPDATA%\\TimeCardPro) are copied to the TimeBooks
+folder by timecard.paths the first time it's needed. Uninstall TimeCard Pro itself from Settings > Apps.
 
   Setup.exe                 interactive install
   Setup.exe --silent [--pin 1234] [--company "Acme LLC"] [--no-desktop] [--no-start-menu]
                      [--no-timecards] [--no-payroll]
                             install without UI (--no-timecards / --no-payroll turn those features off in the new
                             workbook; without --pin the app asks for a PIN on first use; --company
-                            creates this year's workbook in Documents\\TimeCard Pro unless one is already set up)
-  Setup.exe --silent --portable E:\\   make a portable copy in E:\\TimeCard Pro Portable
-  Setup.exe --update <TimeCardPro.exe> [--wait-pid N]
+                            creates this year's workbook in Documents\\TimeBooks unless one is already set up)
+  Setup.exe --silent --portable E:\\   make a portable copy in E:\\TimeBooks Portable
+  Setup.exe --update <TimeBooks.exe> [--wait-pid N]
                             started by the app's Check for Updates: waits for the app to close, updates that copy
                             (installed or portable, keeping shortcut choices, PIN and settings) and restarts it
   Uninstall.exe --uninstall remove (Uninstall.exe is a copy of Setup.exe placed in the install dir)
@@ -42,12 +45,12 @@ from pathlib import Path
 
 from timecard import __version__, paths, security
 
-APP_NAME = "TimeCard Pro"
-APP_EXE = "TimeCardPro.exe"
+APP_NAME = "TimeBooks"
+APP_EXE = "TimeBooks.exe"
 VERSION = __version__
-PUBLISHER = "TimeCard Pro"
-REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\TimeCardPro"
-INSTALL_DIR = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "TimeCardPro"
+PUBLISHER = "TimeBooks"
+REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\TimeBooks"
+INSTALL_DIR = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "TimeBooks"
 START_MENU = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / f"{APP_NAME}.lnk"
 DESKTOP = Path(os.environ["USERPROFILE"]) / "Desktop" / f"{APP_NAME}.lnk"
 NO_WINDOW = 0x08000000
@@ -116,7 +119,7 @@ def uninstall() -> None:
         pass
     # Uninstall.exe is running from INSTALL_DIR, so remove the folder after this process exits.
     if INSTALL_DIR.exists():
-        bat = Path(tempfile.gettempdir()) / "timecardpro_cleanup.cmd"
+        bat = Path(tempfile.gettempdir()) / "timebooks_cleanup.cmd"
         bat.write_text(f'@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nrmdir /s /q "{INSTALL_DIR}"\r\ndel "%~f0"\r\n')
         subprocess.Popen(["cmd", "/c", str(bat)], creationflags=NO_WINDOW | 0x00000008)  # DETACHED_PROCESS
 
@@ -136,7 +139,7 @@ def existing_workbook(settings_dir: Path, app_base: Path) -> Path | None:
 
 
 def planned_workbook(company_name: str, app_base: Path, portable: bool) -> Path:
-    """Where Setup will create the workbook: Documents\\TimeCard Pro (or the portable drive's Data\\Workbooks)."""
+    """Where Setup will create the workbook: Documents\\TimeBooks (or the portable drive's Data\\Workbooks)."""
     return (paths.default_workbook_dir(app_base, portable)
             / paths.workbook_filename(company_name, date.today().year))
 
@@ -180,11 +183,17 @@ def create_workbook(company_name: str, settings_dir: Path, app_base: Path, use_t
 
 def use_settings_dir(folder: Path) -> None:
     """Point the PIN/settings store at `folder` (the computer's AppData, or a portable copy's Data\\Settings)."""
-    os.environ["TIMECARDPRO_SETTINGS_DIR"] = str(folder)
+    os.environ[paths.SETTINGS_ENV] = str(folder)
 
 
 def installed_settings_dir() -> Path:
-    return Path(os.environ.get("APPDATA") or Path.home()) / "TimeCardPro"
+    """%APPDATA%\\TimeBooks (a TimeCard Pro settings folder, PIN included, is copied there first)."""
+    return paths.installed_settings_dir()
+
+
+def app_env() -> dict:
+    """The environment to start the app with: without the settings override Setup uses for itself."""
+    return {k: v for k, v in os.environ.items() if k != paths.SETTINGS_ENV}
 
 
 def removable_drives() -> list[str]:
@@ -215,7 +224,7 @@ def portable_problem(target: Path) -> str | None:
     if not anchor.exists():
         return f"{anchor} is not available. Is the drive plugged in?"
     try:
-        probe = anchor / ".timecardpro-write-test"
+        probe = anchor / ".timebooks-write-test"
         probe.write_text("x")
         probe.unlink()
     except OSError:
@@ -236,7 +245,7 @@ def install_portable(target: Path) -> Path:
     with zipfile.ZipFile(resource("payload.zip")) as z:
         z.extractall(target)
     (target / paths.PORTABLE_MARKER).write_text(
-        "This copy of TimeCard Pro is portable: workbooks, PIN and settings are kept in the Data folder on this "
+        "This copy of TimeBooks is portable: workbooks, PIN and settings are kept in the Data folder on this "
         "drive and nothing is saved on the computer.\r\nDo not delete the Data folder - it holds your workbooks.\r\n",
         encoding="utf-8")
     for sub in ("Workbooks", "Settings"):
@@ -325,8 +334,7 @@ def update_gui(app_exe: Path, wait_pid: int | None) -> None:
             root.destroy()
             return
         exe = result["exe"]
-        env = {k: v for k, v in os.environ.items() if k != "TIMECARDPRO_SETTINGS_DIR"}
-        subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
+        subprocess.Popen([str(exe)], cwd=str(exe.parent), env=app_env())
         root.destroy()
 
     worker = threading.Thread(target=work, daemon=True)
@@ -381,7 +389,7 @@ def gui(mode: str) -> None:
     browse_btn = ttk.Button(where, text="Browse\u2026")
     browse_btn.grid(row=3, column=2, sticky="w", padx=(6, 0), pady=(4, 0))
     hint = (f"Creates a \"{paths.PORTABLE_FOLDER}\" folder there. Workbooks, PIN and settings stay\n"
-            "on the drive, so nothing is left on the computer. Run TimeCardPro.exe from that folder."
+            f"on the drive, so nothing is left on the computer. Run {APP_EXE} from that folder."
             if drives else "No USB drive found. Plug one in, then click Browse or type the drive (e.g. E:\\).")
     ttk.Label(where, text=hint, foreground="#555", justify="left").grid(row=4, column=0, columnspan=3, sticky="w",
                                                                        padx=(22, 0), pady=(4, 0))
@@ -578,7 +586,7 @@ def gui(mode: str) -> None:
         root.config(cursor="")
         if portable:
             messagebox.showinfo(f"{APP_NAME} Setup", f"The portable copy is ready in:\n{exe.parent}\n\n"
-                                "On any computer, open that folder and run TimeCardPro.exe.\n"
+                                f"On any computer, open that folder and run {APP_EXE}.\n"
                                 "Save workbooks in its Data\\Workbooks folder so they stay on the drive."
                                 + book_note)
         else:
@@ -589,8 +597,7 @@ def gui(mode: str) -> None:
                                    f"No shortcuts were added. Run {APP_EXE} from the folder above.")
                                 + book_note)
         if launch.get():
-            env = {k: v for k, v in os.environ.items() if k != "TIMECARDPRO_SETTINGS_DIR"}
-            subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
+            subprocess.Popen([str(exe)], cwd=str(exe.parent), env=app_env())
         root.destroy()
 
     btns = ttk.Frame(frm)

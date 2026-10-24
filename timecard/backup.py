@@ -1,6 +1,7 @@
 """Dated backup copies of the workbook, e.g. to a Google Drive for desktop folder.
 
-Backups go to <backup folder>\\TimeCard Pro Backups\\<workbook name>\\<workbook name> YYYY-MM-DD HHMMSS.xlsx and
+Backups go to <backup folder>\\TimeBooks Backups\\<workbook name>\\<workbook name> YYYY-MM-DD HHMMSS.xlsx (or the
+"TimeCard Pro Backups" folder a backup folder already has, so older copies keep rotating together) and
 only the newest `keep` copies are kept. Any synced folder works (Google Drive, OneDrive, Dropbox) as does a
 second USB drive.
 """
@@ -12,7 +13,10 @@ import string
 from datetime import datetime
 from pathlib import Path
 
-BACKUP_ROOT_NAME = "TimeCard Pro Backups"
+from . import paths
+
+BACKUP_ROOT_NAME = "TimeBooks Backups"
+OLD_BACKUP_ROOT_NAME = "TimeCard Pro Backups"
 DEFAULT_KEEP = 30
 
 
@@ -33,7 +37,12 @@ def google_drive_folders() -> list[Path]:
 
 
 def backup_folder(dest_root: str | Path, workbook: str | Path) -> Path:
-    return Path(dest_root) / BACKUP_ROOT_NAME / Path(workbook).stem
+    return backup_root(dest_root) / Path(workbook).stem
+
+
+def backup_root(dest_root: str | Path) -> Path:
+    """<backup folder>\\TimeBooks Backups, or the TimeCard Pro Backups folder that is already there."""
+    return paths.kept_folder(Path(dest_root), BACKUP_ROOT_NAME, OLD_BACKUP_ROOT_NAME)
 
 
 def list_backups(dest_root: str | Path, workbook: str | Path) -> list[Path]:

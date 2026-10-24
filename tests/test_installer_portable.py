@@ -25,21 +25,21 @@ class PortableInstallTests(unittest.TestCase):
         payload_dir = self.root / "res"
         payload_dir.mkdir()
         with zipfile.ZipFile(payload_dir / "payload.zip", "w") as z:
-            z.writestr("TimeCardPro.exe", "new exe")
+            z.writestr("TimeBooks.exe", "new exe")
             z.writestr("_internal/lib.dll", "new lib")
         for p in (mock.patch.object(installer, "resource", lambda name: payload_dir / name),
-                  mock.patch.dict(os.environ, {"TIMECARDPRO_SETTINGS_DIR": str(self.root / "unused")})):
+                  mock.patch.dict(os.environ, {"TIMEBOOKS_SETTINGS_DIR": str(self.root / "unused")})):
             p.start()
             self.addCleanup(p.stop)
 
     def test_target_is_its_own_subfolder(self) -> None:
-        self.assertEqual(installer.portable_target("E:\\"), Path("E:\\") / "TimeCard Pro Portable")
-        self.assertEqual(installer.portable_target("E:\\TimeCard Pro Portable"), Path("E:\\TimeCard Pro Portable"))
+        self.assertEqual(installer.portable_target("E:\\"), Path("E:\\") / "TimeBooks Portable")
+        self.assertEqual(installer.portable_target("E:\\TimeBooks Portable"), Path("E:\\TimeBooks Portable"))
 
     def test_creates_portable_copy_with_data_folders(self) -> None:
         target = installer.portable_target(self.drive)
         exe = installer.install_portable(target)
-        self.assertEqual(exe, target / "TimeCardPro.exe")
+        self.assertEqual(exe, target / "TimeBooks.exe")
         self.assertTrue(paths.is_portable(target))
         self.assertTrue((target / "Data" / "Workbooks").is_dir())
         self.assertTrue((target / "Data" / "Settings").is_dir())
@@ -67,7 +67,7 @@ class PortableInstallTests(unittest.TestCase):
             installer.install_portable(target)
 
     def test_missing_drive_is_reported(self) -> None:
-        problem = installer.portable_problem(self.root / "Z-not-plugged-in" / "TimeCard Pro Portable")
+        problem = installer.portable_problem(self.root / "Z-not-plugged-in" / "TimeBooks Portable")
         self.assertIn("not available", problem)
 
 

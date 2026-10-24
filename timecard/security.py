@@ -1,8 +1,8 @@
-"""PIN lock for the Employees tab, with a security question for a forgotten PIN.
+"""The app's one PIN (for Company Settings and any tabs the owner locks), with a security question for a forgotten PIN.
 
 The PIN and the recovery answer are set by the installer (or on first use) and kept only as salted
-PBKDF2 hashes in %APPDATA%\\TimeCardPro\\pin.json (or $TIMECARDPRO_SETTINGS_DIR). This keeps casual
-onlookers out of the app's employee records; it does not encrypt the workbook itself.
+PBKDF2 hashes in %APPDATA%\\TimeBooks\\pin.json (or $TIMEBOOKS_SETTINGS_DIR). This keeps casual
+onlookers out of locked tabs; it does not encrypt the workbook itself.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ SECURITY_QUESTIONS = [
 
 
 def settings_dir() -> Path:
-    return paths.settings_dir()  # %APPDATA%\TimeCardPro, or the drive's Data\Settings when portable
+    return paths.settings_dir()  # %APPDATA%\TimeBooks, or the drive's Data\Settings when portable
 
 
 def pin_file() -> Path:

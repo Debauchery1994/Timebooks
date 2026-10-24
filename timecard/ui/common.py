@@ -18,7 +18,8 @@ from .. import APP_NAME, backup, branding, calc, paths
 
 
 GRIDCRAFT_EXE = Path(r"C:\Program Files\GridCraft\gridcraft.exe")
-OUTPUT_DIR_NAME = "TimeCard Pro Output"
+OUTPUT_DIR_NAME = "TimeBooks Output"
+OLD_OUTPUT_DIR_NAME = "TimeCard Pro Output"   # kept when a workbook's folder already has it
 MAX_RECENT = 8
 AUTOSAVE_DELAY_MS = 2000      # save this long after the last change
 AUTOSAVE_RETRY_MS = 30_000    # retry while the file is open in another program
