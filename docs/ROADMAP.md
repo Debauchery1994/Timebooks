@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro into **Timebooks**, a small-business b
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
-_Last updated: 2026-10-24 · current version: 1.2.0 (released 2026-10-24) · next: 1.3.0_
+_Last updated: 2026-10-24 · current version: 1.3.0 (built, not yet published) · next: 1.4.0_
 
 ---
 
@@ -167,6 +167,10 @@ that's wrong, then Approve.
 - [x] **No online AI receipt reading for now.** _Decided:_ ship offline only. Revisit only if the 20-real-receipt test
       fails mainly on faded thermal paper or phone photos; if it's ever added it needs the owner's own API key, a clear
       one-time warning and a per-receipt indicator.
+
+- [x] Pre-release reviews (rename; Expenses and scanning): all findings fixed
+- [x] Version 1.3.0; installer built (`release-builds/1.3.0/`)
+- [ ] Publish `v1.3.0` (the only download), delete the 1.2.0 release; owner reinstalls
 
 **1.3.0 is done when** a 1.2.0 copy updates to Timebooks with everything intact; a month of expenses can be entered
 with receipts attached and the category totals match a hand count; and 20 real receipts from the business are
