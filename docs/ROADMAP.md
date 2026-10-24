@@ -184,8 +184,8 @@ From the parking lot (owner's notes, 2026-10-24). Built in this order; each part
 ### A. Recurring expenses (Expenses tab)
 **Owner sees:** mark an expense as **repeats monthly / quarterly / yearly** (rent, phone, software). On the due date
 the app adds it as a Draft for that period (nothing is counted until approved), and the Expenses tab shows what's due.
-- [ ] `Recurring` sheet: `RecurringID | Vendor | Category | Amount | PaymentMethod | Memo | Every | NextDate | Active`
-- [ ] Due ones become Drafts when the workbook opens (once per period, never twice); stop / edit / skip one
+- [x] `Recurring` sheet: `RecurringID | Vendor | Category | Amount | PaymentMethod | Memo | Every | NextDate | Active | Day`
+- [x] Due ones become Drafts when the workbook opens (once per period, never twice); stop / restart / skip one
 
 ### B. Mileage log, and owners as a pay group
 **Owner sees:** a **Mileage** list (in Expenses): date, who drove, purpose, from/to, miles; the IRS standard mileage

@@ -6,13 +6,15 @@ the workbook and its receipts can move together (another folder, a USB drive, a 
 """
 from __future__ import annotations
 
+import calendar
 import re
 import shutil
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from .models import Expense
+from .models import Expense, Recurring
 
 # IRS Schedule C expense lines, so the tax professional can use the totals directly. The owner can add more.
 DEFAULT_CATEGORIES = (
@@ -21,6 +23,8 @@ DEFAULT_CATEGORIES = (
     "Taxes & licenses", "Travel", "Meals", "Utilities", "Other",
 )
 PAYMENT_METHODS = ("Cash", "Card", "Check", "Bank transfer", "Other")
+REPEATS = ("Monthly", "Quarterly", "Yearly")
+_MONTHS_PER = {"Monthly": 1, "Quarterly": 3, "Yearly": 12}
 STATUSES = ("Approved", "Draft")   # Draft = scanned, not reviewed yet (1.3.0 part C)
 RECEIPTS_FOLDER = "Receipts"
 RECEIPT_TYPES = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".pdf")
@@ -93,3 +97,47 @@ def last_category_for(expenses: list[Expense], vendor: str) -> str:
     """The category used last time for this vendor (so the next expense from them suggests it), or ''."""
     same = [e for e in expenses if e.vendor.strip().lower() == vendor.strip().lower() and e.category]
     return max(same, key=lambda e: (e.expense_date, e.expense_id)).category if same else ""
+
+
+# ---- recurring expenses
+
+def add_period(d: date, every: str, anchor_day: int | None = None) -> date:
+    """The next due date: one month / quarter / year on, keeping the original day of the month where it exists
+    (the 31st becomes the last day of shorter months, then goes back to the 31st)."""
+    months = _MONTHS_PER.get(every, 1)
+    y, m = divmod(d.month - 1 + months, 12)
+    year, month = d.year + y, m + 1
+    day = min(anchor_day or d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def next_recurring_id(items: list[Recurring]) -> str:
+    nums = [int(m[1]) for r in items if (m := re.fullmatch(r"R(\d+)", r.recurring_id))]
+    return f"R{max(nums, default=0) + 1:03d}"
+
+
+def recurring_from(e: Expense, every: str, recurring_id: str) -> Recurring:
+    """Make `e` repeat: the next one is due one period after it."""
+    return Recurring(recurring_id=recurring_id, vendor=e.vendor, category=e.category, amount=e.amount,
+                     payment_method=e.payment_method, memo=e.memo, every=every,
+                     next_date=add_period(e.expense_date, every), active=True, day=e.expense_date.day)
+
+
+def due_drafts(items: list[Recurring], existing: list[Expense], today: date) -> list[Expense]:
+    """Draft expenses for every recurring expense due on or before `today` (several if the workbook wasn't opened for
+    a while), moving each one's next date on. A period that already has an expense from it is never added twice."""
+    out: list[Expense] = []
+    taken = {(e.recurring_id, e.expense_date) for e in existing if e.recurring_id}
+    for r in items:
+        if not r.active or r.next_date is None:
+            continue
+        anchor = r.day or r.next_date.day
+        while r.next_date <= today:
+            if (r.recurring_id, r.next_date) not in taken:
+                out.append(Expense(expense_id=next_expense_id(existing + out), expense_date=r.next_date,
+                                   vendor=r.vendor, category=r.category, amount=r.amount,
+                                   payment_method=r.payment_method, memo=r.memo, status="Draft",
+                                   recurring_id=r.recurring_id, created=today.isoformat()))
+            r.next_date = add_period(r.next_date, r.every, anchor)
+    return out
+

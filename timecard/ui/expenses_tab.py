@@ -58,6 +58,12 @@ class ExpenseDialog(ModalDialog):
         self.w["check"].insert(0, str(e.check_number or ""))
         self.w["memo"] = row(7, "Memo", ttk.Entry(f, width=36))
         self.w["memo"].insert(0, e.memo)
+        self.w["repeats"] = ttk.Combobox(f, values=["No"] + list(expenses.REPEATS), state="readonly", width=12)
+        linked = next((r for r in self.book.recurring if r.recurring_id == e.recurring_id), None)
+        self.w["repeats"].set(linked.every if linked else "No")
+        if linked is not None:
+            self.w["repeats"].configure(state="disabled")   # change it under Recurring…
+        row(9, "Repeats", self.w["repeats"])
         rf = ttk.Frame(f)
         shown = Path(self.receipt_source or e.receipt_file).name if (self.receipt_source or e.receipt_file) else ""
         self.v_receipt = ttk.Label(rf, text=shown or "No receipt attached", style="Muted.TLabel")
@@ -65,7 +71,7 @@ class ExpenseDialog(ModalDialog):
         ttk.Button(rf, text="Attach…", command=self._choose_receipt).pack(side="left", padx=(8, 0))
         row(8, "Receipt", rf)
         ttk.Label(f, text="Amount is the total paid, tax included. Receipts are copied into a Receipts folder next to "
-                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=9, column=0, columnspan=2,
+                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=10, column=0, columnspan=2,
                                                                              sticky="w", pady=(6, 0))
         return self.w["vendor"] if not e.vendor else self.w["amount"]
 
@@ -108,7 +114,8 @@ class ExpenseDialog(ModalDialog):
             expense_id=self.e.expense_id, expense_date=d, vendor=vendor, category=category, amount=amount, tax=tax,
             payment_method=w["method"].get(), check_number=check if w["method"].get() == "Check" else None,
             memo=w["memo"].get().strip(), receipt_file=self.e.receipt_file, status=self.status,
-            vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"))
+            vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"),
+            recurring_id=self.e.recurring_id)
         return True
 
 
@@ -142,11 +149,11 @@ class ReceiptReviewDialog(ExpenseDialog):
             ttk.Label(right, text="choose", style="Warn.TLabel").grid(row=2, column=2, sticky="w", padx=(6, 0))
         warn = ("Couldn't read this receipt automatically; fill it in from the picture." if self.fields is None else
                 "Fields marked \"check this\" weren't read for sure. " + " ".join(self.fields.warnings))
-        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=10, column=0, columnspan=3,
+        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=11, column=0, columnspan=3,
                                                                            sticky="w", pady=(6, 0))
         self.v_draft = tk.BooleanVar(value=False)
         ttk.Checkbutton(right, text="Keep as draft (review later; drafts aren't in the totals)",
-                        variable=self.v_draft).grid(row=11, column=0, columnspan=3, sticky="w", pady=(6, 0))
+                        variable=self.v_draft).grid(row=12, column=0, columnspan=3, sticky="w", pady=(6, 0))
         return first
 
     def _show_picture(self, frame) -> None:
@@ -164,6 +171,66 @@ class ReceiptReviewDialog(ExpenseDialog):
     def apply(self) -> bool:
         self.status = "Draft" if self.v_draft.get() else "Approved"
         return super().apply()
+
+
+class RecurringDialog(ModalDialog):
+    """The recurring expenses: stop or restart one, or skip its next time."""
+
+    def __init__(self, master, book):
+        self.book = book
+        super().__init__(master, "Recurring Expenses")
+
+    def body(self, f):
+        cols = (("vendor", "Vendor", 200), ("amount", "Amount", 90), ("every", "Repeats", 90),
+                ("next", "Next due", 100), ("state", "", 80))
+        self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=10)
+        for c, h, w in cols:
+            self.tree.heading(c, text=h)
+            self.tree.column(c, width=w, anchor="e" if c == "amount" else "w")
+        style_tree(self.tree)
+        self.tree.pack(fill="both", expand=True)
+        b = ttk.Frame(f, padding=(0, 8, 0, 0))
+        b.pack(fill="x")
+        ttk.Button(b, text="Stop / Restart", command=self.toggle).pack(side="left")
+        ttk.Button(b, text="Skip next time", command=self.skip).pack(side="left", padx=6)
+        ttk.Label(f, text="To make an expense repeat, add or edit it and choose Repeats. Each time one comes due it "
+                  "is added as a draft for you to approve.", style="Muted.TLabel", wraplength=520).pack(anchor="w",
+                                                                                                pady=(8, 0))
+        self.fill()
+        return self.tree
+
+    def fill(self) -> None:
+        keep = self.tree.selection()
+        self.tree.delete(*self.tree.get_children())
+        for r in self.book.recurring:
+            nxt = f"{r.next_date:%m/%d/%Y}" if r.next_date and r.active else ""
+            self.tree.insert("", "end", iid=r.recurring_id, values=(r.vendor, fmt_money(r.amount), r.every, nxt,
+                                                                    "" if r.active else "Stopped"))
+        if keep and self.tree.exists(keep[0]):
+            self.tree.selection_set(keep[0])
+
+    def _sel(self):
+        sel = self.tree.selection()
+        return next((r for r in self.book.recurring if sel and r.recurring_id == sel[0]), None)
+
+    def toggle(self) -> None:
+        r = self._sel()
+        if r is not None:
+            r.active = not r.active
+            if r.active and (r.next_date is None or r.next_date < date.today()):
+                # restarting: the next one is due from today on, not every missed period
+                while r.next_date is None or r.next_date < date.today():
+                    r.next_date = expenses.add_period(r.next_date or date.today(), r.every, r.day or None)
+            self.fill()
+
+    def skip(self) -> None:
+        r = self._sel()
+        if r is not None and r.active and r.next_date:
+            r.next_date = expenses.add_period(r.next_date, r.every, r.day or None)
+            self.fill()
+
+    def apply(self) -> bool:
+        return True
 
 
 class ExpensesTab(PinLockable, ttk.Frame):
@@ -199,6 +266,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
         ttk.Button(top, text="Delete", command=self.delete).pack(side="right")
         ttk.Button(top, text="View Receipt", command=self.view_receipt).pack(side="right", padx=6)
         ttk.Button(top, text="Edit…", command=self.edit).pack(side="right")
+        ttk.Button(top, text="Recurring…", command=self.manage_recurring).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Add Expense…", command=self.add).pack(side="right", padx=6)
         scan = ttk.Menubutton(top, text="Scan Receipt ▾", style="Accent.TButton")
         menu = tk.Menu(scan, tearoff=0)
@@ -303,6 +371,11 @@ class ExpensesTab(PinLockable, ttk.Frame):
                     return
         if result.category not in self.book.categories:
             self.book.categories.append(result.category)
+        repeats = dlg.w["repeats"].get()
+        if repeats in expenses.REPEATS and not result.recurring_id:
+            rec = expenses.recurring_from(result, repeats, expenses.next_recurring_id(self.book.recurring))
+            self.book.recurring.append(rec)
+            result.recurring_id = rec.recurring_id
         if new:
             self.book.expenses.append(result)
         else:
@@ -445,9 +518,31 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.app.status("No new receipts in the scanner folder.")
 
     def on_shown(self) -> None:
-        """Tab opened: pick up anything new in the scanner folder."""
+        """Tab opened: add recurring expenses that came due, and pick up anything new in the scanner folder."""
+        self.add_due_recurring()
         if self._scan_ready() and self.app.settings.data.get("scanner_folder"):
             self.check_scanner_folder(quiet=True)
+
+    # ----- recurring expenses
+    def add_due_recurring(self) -> int:
+        """Add a Draft for each recurring expense that has come due (also when the workbook is opened)."""
+        if self.book is None or not self.book.company.use_expenses or not self.book.recurring:
+            return 0
+        drafts = expenses.due_drafts(self.book.recurring, self.book.expenses, date.today())
+        if drafts:
+            self.book.expenses.extend(drafts)
+            self.app.mark_dirty()
+            self.refresh()
+            self.app.status(f"{len(drafts)} recurring expense{'s' if len(drafts) != 1 else ''} came due and "
+                            f"{'were' if len(drafts) != 1 else 'was'} added as drafts on the Expenses tab.")
+        return len(drafts)
+
+    def manage_recurring(self) -> None:
+        if self.book is None or self.locked:
+            return
+        RecurringDialog(self, self.book).show()
+        self.app.mark_dirty()
+        self.reload()
 
     def view_receipt(self) -> None:
         e = self._selected() if not self.locked else None

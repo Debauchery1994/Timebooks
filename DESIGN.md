@@ -370,3 +370,11 @@ stored (collect W-9s).
   every field the reader wasn't sure of (a vendor is only sure when it is a known one). OK approves; "Keep as draft"
   saves it for later. Scanner-folder receipts go straight in as drafts; double-clicking a draft opens the review.
   Nothing is approved without a person. Fully offline; no online AI reading.
+
+## Recurring expenses (1.4.0)
+- Choosing **Repeats** (Monthly / Quarterly / Yearly) on an expense makes a `Recurring` entry (sheet `Recurring`:
+  `RecurringID | Vendor | Category | Amount | PaymentMethod | Memo | Every | NextDate | Active | Day`) due one period
+  later on the same day of the month (`Day`; the 31st falls back to the last day of shorter months).
+- When the workbook opens and when the Expenses tab opens, every due one becomes a **Draft** expense (with
+  `Expenses.RecurringID`), catching up missed periods; a period that already has an expense from it is never added
+  twice. Expenses > Recurring… stops/restarts one (restarting starts from today) or skips its next time. Schema 5.

@@ -166,8 +166,24 @@ class Expense:
     memo: str = ""
     receipt_file: str = ""             # relative to the workbook's folder, e.g. Receipts\2026\... .jpg
     status: str = "Approved"           # Approved | Draft (scanned, not reviewed yet)
-    vendor_id: str = ""                # the Vendors list (1.4.0)
+    vendor_id: str = ""                # the Vendors list (1.5.0)
     created: str = ""                  # when it was entered, ISO date-time
+    recurring_id: str = ""             # made from this recurring expense (1.4.0)
+
+
+@dataclass
+class Recurring:
+    """An expense that repeats (rent, phone, software). Each time it comes due a Draft expense is added for it."""
+    recurring_id: str
+    vendor: str
+    category: str = ""
+    amount: Decimal = Decimal("0")
+    payment_method: str = "Card"
+    memo: str = ""
+    every: str = "Monthly"             # Monthly | Quarterly | Yearly
+    next_date: date | None = None      # when the next Draft is due
+    active: bool = True
+    day: int = 0                       # day of the month it's due (31 = last day of short months); 0 = next_date's
 
 
 @dataclass

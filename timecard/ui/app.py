@@ -469,6 +469,7 @@ class App(tk.Tk):
         self.refresh_all(keep_selection=False)
         self.refresh_branding()
         self.apply_features()
+        self.expenses_tab.add_due_recurring()
         self.apply_pin_locks(lock_current=True)
         if book.path:
             self.settings.add_recent(book.path)
