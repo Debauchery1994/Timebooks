@@ -48,12 +48,14 @@ class Company:
     # Features the business uses (Company Settings > Features). Turning one off hides its tabs; nothing is deleted.
     use_timecards: bool = True   # Time Card and Year Log (hourly pay comes from these hours)
     use_payroll: bool = True     # Pay & Checks
+    use_expenses: bool = False   # Expenses (money spent, with receipts)
     # Tabs the owner has put behind the PIN (Company Settings > Locked by PIN). Company Settings itself is always
     # locked, since these switches live there. There is one PIN for the whole app, set up when it was installed.
     lock_timecard: bool = False
     lock_employees: bool = True
     lock_yearlog: bool = False
     lock_payroll: bool = False
+    lock_expenses: bool = False
     # Branding. The logo image itself is stored by storage.py on a hidden "Branding" sheet (TimecardBook.logo_png).
     brand_color: str = "#1F3A5F"
     logo_on_checks: bool = True   # voucher stubs; the check face too on blank stock only
@@ -148,6 +150,24 @@ class PayrollRecord:
     # of gross_pay). Salaried checks record the hours with no extra pay.
     leave_hours: Decimal = Decimal("0")
     leave_pay: Decimal = Decimal("0")
+
+
+@dataclass
+class Expense:
+    """Money the business spent (cash basis: recorded when paid). See DESIGN.md "Expenses"."""
+    expense_id: str
+    expense_date: date
+    vendor: str = ""
+    category: str = ""
+    amount: Decimal = Decimal("0")     # total paid, tax included
+    tax: Decimal = Decimal("0")        # the tax part of `amount` (shown separately, not added)
+    payment_method: str = "Card"       # Cash | Card | Check | Bank transfer | Other
+    check_number: int | None = None    # when paid by check
+    memo: str = ""
+    receipt_file: str = ""             # relative to the workbook's folder, e.g. Receipts\2026\... .jpg
+    status: str = "Approved"           # Approved | Draft (scanned, not reviewed yet)
+    vendor_id: str = ""                # the Vendors list (1.4.0)
+    created: str = ""                  # when it was entered, ISO date-time
 
 
 @dataclass

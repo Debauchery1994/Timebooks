@@ -342,3 +342,18 @@ stored (collect W-9s).
   only reads the old folder until Install is clicked: choosing portable, cancelling or uninstalling copies nothing.
   The old folder is left alone. Folders the owner already has keep being used (`paths.kept_folder`): Documents\TimeCard
   Pro for workbooks, "TimeCard Pro Backups" in a backup folder, "TimeCard Pro Output" next to a workbook.
+
+## Expenses (1.3.0)
+- Company Settings > Features > Expenses (`Company.use_expenses`, off by default) shows the **Expenses** tab;
+  Locked by PIN has an Expenses box (`lock_expenses`). Cash basis: an expense is recorded when it is paid.
+- `Expenses` sheet: `ExpenseID | Date | Vendor | VendorID | Category | Amount | Tax | PaymentMethod | CheckNumber |
+  Memo | ReceiptFile | Status | Created`. Amount is the total paid, tax included; Tax is the part of it that was tax.
+  Status `Approved` or `Draft` (scanned, not reviewed; drafts are left out of totals). IDs `X0001`, ... `VendorID` is
+  for the Vendors list (1.4.0). `Categories` sheet: the owner's list, seeded with the IRS Schedule C lines
+  (`expenses.DEFAULT_CATEGORIES`); a category typed on an expense is added to it. Schema version 4.
+- Receipts are never stored in the workbook: `expenses.file_receipt` copies the picture/PDF to
+  `Receipts\<year>\<date> <vendor> <amount>.<ext>` next to the workbook (never overwriting; " (2)" etc.), and the
+  expense keeps that path relative to the workbook's folder. Deleting an expense keeps its receipt file. Backups also
+  copy new receipt files to "<workbook> Receipts" in the backup folder (`backup.backup_receipts`).
+- The tab: Month / Category / Vendor filters, sortable columns, Add / Edit (double-click) / View Receipt / Delete,
+  a total row and totals by category for what is shown. Choosing a vendor suggests the category used for them last.

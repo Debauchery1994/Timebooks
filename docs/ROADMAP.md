@@ -93,9 +93,11 @@ the only download. So there is one installer name and no code that moves an old 
 receipt (image or PDF), view it, filter by month/category/vendor, and sort, the same way as the Year Log. Totals by
 category at the bottom.
 
-- [ ] Company Settings → Features gets **Expenses & receipts** (off until turned on); Locked by PIN gets an
+- [x] Company Settings → Features gets **Expenses** (off until turned on); Locked by PIN gets an
       **Expenses** box (off by default)
-- [ ] Schema version 4 for the new sheets
+- [x] Schema version 4 for the new sheets
+- [x] Expenses tab: filters, sorting, add/edit/delete, view receipt, totals by category; vendor suggests its last
+      category
 
 **Data (new sheets):**
 
@@ -111,8 +113,9 @@ Advertising, Car & truck, Commissions & fees, Contract labor, Insurance, Legal &
 
 **Receipt files** live in a `Receipts\<year>\` folder next to the workbook (`Data\Receipts` on a portable copy), not
 inside the `.xlsx`. Images would make the workbook huge and slow to save.
-- [ ] Backups copy the receipts folder too (only new files each time)
-- [ ] Moving or renaming a receipt is done through the app so links don't break
+- [x] Backups copy the receipts folder too (only new files each time)
+- [x] Receipts are filed by the app (named by date, vendor, amount; never overwritten); a "find missing receipts"
+      tool can come later if folders get separated
 
 ### C. Scan a receipt and fill it in automatically
 

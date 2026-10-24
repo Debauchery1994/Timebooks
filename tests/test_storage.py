@@ -83,7 +83,8 @@ class StorageTests(unittest.TestCase):
     def test_schema_and_formats(self) -> None:
         path = sample_book().save(self.dir / "acme.xlsx")
         wb = openpyxl.load_workbook(path)
-        self.assertEqual(wb.sheetnames, ["Company", "Employees", "TimeLog", "Payroll", "Summary"])
+        self.assertEqual(wb.sheetnames,
+                         ["Company", "Employees", "TimeLog", "Payroll", "Summary", "Expenses", "Categories"])
         log = wb["TimeLog"]
         self.assertEqual([c.value for c in log[1]],
                          ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",

@@ -21,13 +21,13 @@ from ..models import Company
 from .. import APP_NAME, __version__, backup, branding, calc, paths, security, updates
 from ..storage import TimecardBook, WorkbookError
 from .common import (
-    AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P, SETTINGS_DIR,
-    Settings,
-    TEXT_SCALES, THEMES, THEME_NAMES, _appearance, _apply_brand_palette, _brand, apply_appearance, apply_tk_colors,
+    AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P,
+    SETTINGS_DIR, Settings, TEXT_SCALES, THEMES, THEME_NAMES, _appearance, _apply_brand_palette, _brand, apply_appearance, apply_tk_colors,
     documents_dir, is_salaried, log, logo_photo, open_file, recent_labels, relayout_flows, safe_filename, scaled,
     setup_logging, tag_role,
 )
 from .company_tab import CompanyTab
+from .expenses_tab import ExpensesTab
 from .dialogs import NewYearDialog, StartPositionDialog
 from .employees_tab import EmployeesTab
 from .payroll_tab import PayrollTab
@@ -70,12 +70,13 @@ class App(tk.Tk):
         self.employees_tab = EmployeesTab(self.nb, self)
         self.yearlog_tab = YearLogTab(self.nb, self)
         self.payroll_tab = PayrollTab(self.nb, self)
+        self.expenses_tab = ExpensesTab(self.nb, self)
         self.company_tab = CompanyTab(self.nb, self)
         # The tab registry: (tab, label, the Company feature switch that shows it, or None for always shown).
         self.tab_specs = ((self.timecard_tab, "Time Card", "use_timecards"), (self.employees_tab, "Employees", None),
                           (self.yearlog_tab, "Year Log", "use_timecards"), (self.payroll_tab, "Pay & Checks",
                                                                             "use_payroll"),
-                          (self.company_tab, "Company Settings", None))
+                          (self.expenses_tab, "Expenses", "use_expenses"), (self.company_tab, "Company Settings", None))
         for tab, text, _feature in self.tab_specs:
             self.nb.add(tab, text=f"  {text}  ")
         for tab in self.lockable_tabs:
@@ -481,6 +482,7 @@ class App(tk.Tk):
         self.employees_tab.refresh()
         self.yearlog_tab.refresh()
         self.payroll_tab.refresh()
+        self.expenses_tab.refresh()
         self.company_tab.refresh()
 
     def refresh_employees(self) -> None:
@@ -531,7 +533,8 @@ class App(tk.Tk):
 
     @property
     def lockable_tabs(self) -> tuple:
-        return self.timecard_tab, self.employees_tab, self.yearlog_tab, self.payroll_tab, self.company_tab
+        return (self.timecard_tab, self.employees_tab, self.yearlog_tab, self.payroll_tab, self.expenses_tab,
+                self.company_tab)
 
     @property
     def pin_tabs(self) -> list:
@@ -732,6 +735,7 @@ class App(tk.Tk):
         try:
             copy = backup.backup_workbook(self.book.path, dest, int(self.settings.data.get("backup_keep")
                                                                     or backup.DEFAULT_KEEP))
+            backup.backup_receipts(self.book.path, dest)   # receipt files live next to the workbook, not in it
         except OSError as exc:
             log.warning("Backup failed: %s", exc)
             msg = (f"Backup skipped: {dest} is not available. Is Google Drive (or the backup drive) connected?"

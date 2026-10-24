@@ -20,7 +20,8 @@ from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import __version__, branding, calc
-from .models import Company, Employee, PayrollRecord, TimeEntry
+from . import expenses as expenses_mod
+from .models import Company, Employee, Expense, PayrollRecord, TimeEntry
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
 LOCKED_MSG = "The workbook is open in another program (GridCraft/Excel). Close it and try again."
@@ -47,6 +48,8 @@ PAYROLL_FIELDS = ["check_number", "check_date", "period_start", "period_end", "e
 PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "state_tax",
                  "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+EXPENSE_HEADERS = ["ExpenseID", "Date", "Vendor", "VendorID", "Category", "Amount", "Tax", "PaymentMethod",
+                   "CheckNumber", "Memo", "ReceiptFile", "Status", "Created"]
 
 # Workbook layout version, written to the Company sheet as `schema_version` (with the `app_version` that saved it).
 # Bump it whenever a sheet or column is added, so an older copy of the app that opens a newer workbook won't save it
@@ -54,7 +57,8 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 #   1 = 1.1.0-1.1.1 (no marker)
 #   2 = 1.1.2: Employees SalaryBasis, TimeLog SalaryHours / HoursType, pay_hold_back
 #   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
-SCHEMA_VERSION = 3
+#   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
+SCHEMA_VERSION = 4
 META_KEYS = ("schema_version", "app_version")
 
 # Hours WORKED (column I): 0 for PTO/Holiday/Sick (L); the typed salary hours (K) when set; else the punches.
@@ -208,6 +212,8 @@ class TimecardBook:
         self.employees = {}
         self.entries = {}
         self.payroll = []
+        self.expenses: list[Expense] = []
+        self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.dirty = False
         self.disk_stamp: tuple[int, int] | None = None   # (mtime_ns, size) of the file when loaded/saved
@@ -295,6 +301,14 @@ class TimecardBook:
                     rec = cls._read_payroll(r)
                     if rec:
                         book.payroll.append(rec)
+            if (ws := sheet("expenses")) is not None:
+                for r in _rows(ws):
+                    exp = cls._read_expense(r)
+                    if exp:
+                        book.expenses.append(exp)
+            if (ws := sheet("categories")) is not None:
+                cats = [_text(r.get("category")) for r in _rows(ws)]
+                book.categories = [c for c in dict.fromkeys(cats) if c] or list(expenses_mod.DEFAULT_CATEGORIES)
             if (ws := sheet("branding")) is not None:
                 book.logo_png = cls._read_logo(ws)
         finally:
@@ -376,6 +390,20 @@ class TimecardBook:
             salary_hours=_salary_hours(r.get("salaryhours")),
             hours_type=calc.hours_type(TimeEntry(d, emp_id, hours_type=_text(r.get("hourstype")))),
         )
+
+    @staticmethod
+    def _read_expense(r: dict[str, Any]) -> Expense | None:
+        exp_id, d = _text(r.get("expenseid")), _to_date(r.get("date"))
+        if not exp_id or d is None:
+            return None
+        check = _to_int(r.get("checknumber"), 0)
+        status = _text(r.get("status")).capitalize()
+        return Expense(
+            expense_id=exp_id, expense_date=d, vendor=_text(r.get("vendor")), vendor_id=_text(r.get("vendorid")),
+            category=_text(r.get("category")), amount=calc.money(_to_decimal(r.get("amount"))),
+            tax=calc.money(_to_decimal(r.get("tax"))), payment_method=_text(r.get("paymentmethod")) or "Other",
+            check_number=check or None, memo=_text(r.get("memo")), receipt_file=_text(r.get("receiptfile")),
+            status=status if status in expenses_mod.STATUSES else "Approved", created=_text(r.get("created")))
 
     @staticmethod
     def _read_payroll(r: dict[str, Any]) -> PayrollRecord | None:
@@ -471,6 +499,8 @@ class TimecardBook:
         self._write_timelog(wb.create_sheet("TimeLog"))
         self._write_payroll(wb.create_sheet("Payroll"))
         self._write_summary(wb.create_sheet("Summary"))
+        self._write_expenses(wb.create_sheet("Expenses"))
+        self._write_categories(wb.create_sheet("Categories"))
         if self.logo_png:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -525,6 +555,18 @@ class TimecardBook:
                        PAYROLL_FIELDS.index("leave_hours") + 1: FMT_HOURS}
             formats.update({PAYROLL_FIELDS.index(f) + 1: FMT_MONEY for f in PAYROLL_MONEY})
             _fmt_row(ws, ws.max_row, formats)
+
+    def _write_expenses(self, ws: Worksheet) -> None:
+        _write_header(ws, EXPENSE_HEADERS, [10, 12, 24, 10, 20, 12, 10, 14, 11, 30, 40, 10, 18])
+        for e in sorted(self.expenses, key=lambda e: (e.expense_date, e.expense_id)):
+            ws.append([e.expense_id, e.expense_date, e.vendor, e.vendor_id, e.category, float(e.amount), float(e.tax),
+                       e.payment_method, e.check_number, e.memo, e.receipt_file, e.status, e.created])
+            _fmt_row(ws, ws.max_row, {2: FMT_DATE, 6: FMT_MONEY, 7: FMT_MONEY})
+
+    def _write_categories(self, ws: Worksheet) -> None:
+        _write_header(ws, ["Category"], [28])
+        for c in self.categories:
+            ws.append([c])
 
     def _write_summary(self, ws: Worksheet) -> None:
         _write_header(ws, ["EmployeeID", "Employee", "Hours YTD", "Gross YTD", "Net YTD"],

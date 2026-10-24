@@ -1,0 +1,95 @@
+"""Expenses and their receipts: categories, filing receipt files next to the workbook, filters and totals.
+
+Receipt files are never stored inside the .xlsx (it would grow huge and slow to save). They are copied into a
+`Receipts\\<year>` folder next to the workbook and the expense keeps the path relative to the workbook's folder, so
+the workbook and its receipts can move together (another folder, a USB drive, a backup).
+"""
+from __future__ import annotations
+
+import re
+import shutil
+from collections import defaultdict
+from decimal import Decimal
+from pathlib import Path
+
+from .models import Expense
+
+# IRS Schedule C expense lines, so the tax professional can use the totals directly. The owner can add more.
+DEFAULT_CATEGORIES = (
+    "Advertising", "Car & truck", "Commissions & fees", "Contract labor", "Insurance", "Legal & professional",
+    "Office expense", "Rent (equipment)", "Rent (property)", "Repairs & maintenance", "Supplies",
+    "Taxes & licenses", "Travel", "Meals", "Utilities", "Other",
+)
+PAYMENT_METHODS = ("Cash", "Card", "Check", "Bank transfer", "Other")
+STATUSES = ("Approved", "Draft")   # Draft = scanned, not reviewed yet (1.3.0 part C)
+RECEIPTS_FOLDER = "Receipts"
+RECEIPT_TYPES = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic", ".pdf")
+
+
+def next_expense_id(expenses: list[Expense]) -> str:
+    """'X0001', 'X0002', ... one more than the highest used."""
+    nums = [int(m[1]) for e in expenses if (m := re.fullmatch(r"X(\d+)", e.expense_id))]
+    return f"X{max(nums, default=0) + 1:04d}"
+
+
+def receipt_name(e: Expense, suffix: str) -> str:
+    """'2026-10-24 Home Depot 84.17.jpg' with characters Windows can't use in file names removed."""
+    vendor = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "", e.vendor).strip(" .")[:40] or "Receipt"
+    return f"{e.expense_date:%Y-%m-%d} {vendor} {e.amount:.2f}{suffix.lower()}"
+
+
+def file_receipt(source: str | Path, e: Expense, workbook: str | Path) -> str:
+    """Copy `source` into Receipts\\<year> next to `workbook` and return the path to store on the expense (relative to
+    the workbook's folder). Never overwrites another receipt: adds ' (2)', ' (3)', ... when the name is taken."""
+    src = Path(source)
+    if src.suffix.lower() not in RECEIPT_TYPES:
+        raise ValueError(f"{src.name} isn't a picture or PDF. Attach a photo, a scan or a PDF of the receipt.")
+    base = Path(workbook).parent
+    folder = base / RECEIPTS_FOLDER / str(e.expense_date.year)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = receipt_name(e, src.suffix)
+    target, n = folder / name, 2
+    while target.exists():
+        target = folder / f"{Path(name).stem} ({n}){src.suffix.lower()}"
+        n += 1
+    shutil.copy2(src, target)
+    return str(target.relative_to(base))
+
+
+def receipt_path(e: Expense, workbook: str | Path | None) -> Path | None:
+    """The receipt file on disk for `e` (None when it has none, or the workbook isn't saved yet)."""
+    if not e.receipt_file or workbook is None:
+        return None
+    p = Path(e.receipt_file)
+    return p if p.is_absolute() else Path(workbook).parent / p
+
+
+def matches(e: Expense, month: int | None = None, category: str = "", vendor: str = "") -> bool:
+    """Filter used by the Expenses tab: month 1-12 (None = all), exact category, vendor contains (any case)."""
+    return ((month is None or e.expense_date.month == month)
+            and (not category or e.category == category)
+            and (not vendor or vendor.strip().lower() in e.vendor.lower()))
+
+
+def totals_by_category(expenses: list[Expense]) -> list[tuple[str, Decimal]]:
+    """(category, total amount) largest first; drafts (not reviewed yet) are left out."""
+    totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for e in expenses:
+        if e.status != "Draft":
+            totals[e.category or "Other"] += e.amount
+    return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def vendors(expenses: list[Expense]) -> list[str]:
+    """Vendor names already used, for typing suggestions (most used first)."""
+    count: dict[str, int] = defaultdict(int)
+    for e in expenses:
+        if e.vendor.strip():
+            count[e.vendor.strip()] += 1
+    return sorted(count, key=lambda v: (-count[v], v.lower()))
+
+
+def last_category_for(expenses: list[Expense], vendor: str) -> str:
+    """The category used last time for this vendor (so the next expense from them suggests it), or ''."""
+    same = [e for e in expenses if e.vendor.strip().lower() == vendor.strip().lower() and e.category]
+    return max(same, key=lambda e: (e.expense_date, e.expense_id)).category if same else ""

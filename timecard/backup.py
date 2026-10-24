@@ -80,3 +80,20 @@ def backup_workbook(workbook: str | Path, dest_root: str | Path, keep: int = DEF
         except OSError:
             pass
     return target
+
+
+def backup_receipts(workbook: str | Path, dest_root: str | Path) -> int:
+    """Copy the workbook's receipt files (Receipts folder next to it) to "<workbook name> Receipts" in the backup root,
+    only the ones not copied yet (a receipt file never changes once filed). Returns how many were copied."""
+    src = Path(workbook).parent / "Receipts"
+    if not src.is_dir():
+        return 0
+    target_root = backup_root(dest_root) / f"{Path(workbook).stem} Receipts"
+    copied = 0
+    for f in src.rglob("*"):
+        target = target_root / f.relative_to(src)
+        if f.is_file() and not (target.is_file() and target.stat().st_size == f.stat().st_size):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, target)
+            copied += 1
+    return copied
