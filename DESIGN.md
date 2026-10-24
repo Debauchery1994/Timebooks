@@ -387,3 +387,15 @@ stored (collect W-9s).
   Pay, "confirm each year"). Amount = miles × rate, cents ROUND_HALF_UP.
 - An expense can be **on a person's account** (`Expenses.PersonID`, e.g. an owner's gas). The Mileage window shows each
   person's miles, mileage amount and expenses on account for the year (`expenses.account_totals`, drafts left out).
+
+## Bank statements (1.3.0)
+- Expenses > **Bank Statement…** takes a CSV, a PDF or a scan (`timecard/bank.py`, `ui/bank_dialog.py`). CSV: the
+  date / description / amount (or debit / credit) columns are guessed from the headers, can be picked, and are
+  remembered per header layout (`bank_columns` in settings.json). PDF: its own text when it has some, else every page
+  read with the receipt reader; rows are lines that start with a date and end with an amount (and maybe a balance).
+  Money in or out comes from the running balance when printed (balance rows like BEGINNING BALANCE only seed it),
+  else from words like DEPOSIT. Month/day dates take the workbook's year.
+- Matching: money out to an expense of the same amount within 3 days ("matched") or 10 days ("possible"), each expense
+  used once; the rest is "not in expenses" and is ticked to become a Draft (vendor tidied from the description, the
+  vendor's last category, memo "From bank statement: ..."). Money in is listed but kept for Sales (1.5.0). The rows
+  can be saved as a CSV. Nothing changes until OK.

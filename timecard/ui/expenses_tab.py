@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from .. import expenses, receipts_ocr, scanning
 from ..models import Expense, Trip
 from .common import MONTH_NAMES, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
+from .bank_dialog import BankImportDialog
 from .pin import PinLockable
 
 if TYPE_CHECKING:
@@ -416,6 +417,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
         ttk.Button(top, text="Delete", command=self.delete).pack(side="right")
         ttk.Button(top, text="View Receipt", command=self.view_receipt).pack(side="right", padx=6)
         ttk.Button(top, text="Edit…", command=self.edit).pack(side="right")
+        ttk.Button(top, text="Bank Statement…", command=self.import_bank).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Mileage…", command=self.open_mileage).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Recurring…", command=self.manage_recurring).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Add Expense…", command=self.add).pack(side="right", padx=6)
@@ -689,6 +691,21 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.app.status(f"{len(drafts)} recurring expense{'s' if len(drafts) != 1 else ''} came due and "
                             f"{'were' if len(drafts) != 1 else 'was'} added as drafts on the Expenses tab.")
         return len(drafts)
+
+    def import_bank(self) -> None:
+        if self.book is None or self.locked:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Choose a bank statement (CSV, PDF or a scan)",
+                                          filetypes=[("Bank statements", "*.csv *.pdf *.png *.jpg *.jpeg *.tif *.tiff"),
+                                                     ("All files", "*.*")])
+        if not path:
+            return
+        added = BankImportDialog(self, self.book, self.app, Path(path)).show()
+        if added:
+            self.app.mark_dirty()
+            self.refresh()
+            self.app.status(f"{added} draft expense(s) added from the bank statement. Double-click a draft to review "
+                            f"and approve it.{self.app.save_hint()}")
 
     def open_mileage(self) -> None:
         if self.book is None or self.locked:

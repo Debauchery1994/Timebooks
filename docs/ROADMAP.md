@@ -214,11 +214,11 @@ and miles show on their account without a paycheck.
 **Owner sees:** **Expenses → Import Bank Statement**: a CSV from the bank, or, when the bank only gives a PDF (or a
 paper statement is scanned), the app reads the statement and builds the list itself. Each line is matched to an
 existing expense (same amount, close date); unmatched money out can become Draft expenses with one click.
-- [ ] CSV import with a column picker (date, description, amount / debit / credit), remembered per bank
-- [ ] Statement PDF / scan → rows: text PDFs read directly (pypdfium2 text), scans through the receipt reader; the
+- [x] CSV import with a column picker (date, description, amount / debit / credit), remembered per bank
+- [x] Statement PDF / scan → rows: text PDFs read directly (pypdfium2 text), scans through the receipt reader; the
       owner checks the rows before anything is matched, and can save them as a CSV
-- [ ] Matching rules and a review list (matched / possible / unmatched); nothing changes without the owner's OK
-- [ ] Money in is kept for the Sales tab (1.5.0) to match deposits
+- [x] Matching rules and a review list (matched / possible / unmatched); nothing changes without the owner's OK
+- [x] Money in is kept for the Sales tab (1.5.0) to match deposits
 
 #### B. Phone photos over Wi-Fi
 **Owner sees:** **Scan Receipt → From my phone**: a QR code and a short web address; the phone (same Wi-Fi) opens it,
