@@ -66,8 +66,10 @@ medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signa
 ### `Payroll` — one row per check
 `CheckNumber | CheckDate | PeriodStart | PeriodEnd | EmployeeID | Employee | RegularHours |
 OvertimeHours | RegularPay | OvertimePay | GrossPay | FederalTax | StateTax | SocialSecurity |
-Medicare | OtherDeductions | NetPay | Memo | Voided`
+Medicare | OtherDeductions | NetPay | Memo | Voided | LeaveHours | LeavePay`
 - Money columns format `$#,##0.00`; Voided `Yes`/`No`.
+- `LeaveHours` / `LeavePay`: paid time off on the check (see Time off below); `GrossPay` includes `LeavePay`.
+  Workbooks without the columns load them as 0.
 
 ### `Summary` — regenerated on every save, formulas only (for viewing in GridCraft)
 Per active employee plus former (Active=No) employees with hours or checks this year, name suffixed " (former)": `EmployeeID | Employee | Hours YTD | Gross YTD | Net YTD` using
@@ -281,12 +283,21 @@ stored (collect W-9s).
   plus a total row.
 
 ## Salary hours and time off (Time Card)
-- `TimeEntry.salary_hours` (Decimal, optional) and `TimeEntry.hours_type` (`Worked` default | `PTO` | `Holiday` | `Sick`),
-  stored in two new TimeLog columns at the end: `SalaryHours`, `HoursType` (blank for Worked). Workbooks without them load
-  as punches only / Worked.
-- The Time Card shows **Salary hours** and **Type** boxes for salaried people (and for anyone whose period already has
-  typed hours or time off). Typed hours (`8`, `7.5`, `7:30`) replace the In/Out punches for that day.
-- `calc.entry_hours` = all hours on the day; `calc.day_hours` = hours **worked** (0 for PTO/Holiday/Sick), which is what
+- `TimeEntry.salary_hours` (Decimal, optional) and `TimeEntry.hours_type` (`Worked` default | `PTO` | `Holiday` | `Sick`
+  | `Closed`), stored in two TimeLog columns at the end: `SalaryHours`, `HoursType` (blank for Worked). Workbooks without
+  them load as punches only / Worked. A day with a type other than Worked is kept even with no hours.
+- The Time Card shows the hours box and **Type** for everyone. Salaried people type their hours there (`8`, `7.5`,
+  `7:30`; replaces the In/Out punches). For hourly people worked hours are always the punches; the box (headed "Time off
+  hrs") is only open on a PTO / Holiday / Sick day.
+- **Choosing a type:** PTO / Holiday / Sick fills the day's hours from Company Settings → Time off
+  (`Company.pto_hours`, `holiday_hours`, `sick_hours`, default 8; editable for a part day); Closed (business closed) is
+  always 0 hours (so salaried hours don't look like overwork); going back to Worked clears the time off hours. The hours
+  are stored on the day, so changing the setting later doesn't change past days.
+- **Pay:** hourly people are paid for PTO / Holiday / Sick hours at their regular rate when that type's switch is on
+  (`Company.pto_paid`, `holiday_paid`, `sick_paid`, default on); otherwise the day is only noted. Paid time off never
+  counts toward overtime (`HoursSummary.paid_leave`, `PayrollRecord.leave_hours` / `leave_pay`). Closed days are unpaid
+  for hourly people. Salaried pay is the salary whatever the days say.
+- `calc.entry_hours` = all hours on the day (0 when Closed); `calc.day_hours` = hours **worked** (0 for PTO/Holiday/Sick/Closed), which is what
   pay, overtime, the Year Log, monthly summary, statements and memos count; `calc.leave_hours` = time off. The TimeLog
   `Hours` formula follows the same rule (verified in GridCraft). Time Card footer shows Time off; Year Log has a Time
   off column ("PTO 8.00, Sick 4.00"); the printed time card notes the time off. Salaried pay never depends on hours.

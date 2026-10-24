@@ -36,6 +36,15 @@ class Company:
     # Annual statements flag contractors paid at least this much (1099-NEC reporting threshold;
     # $2,000 for payments made in 2026 — confirm each year with a tax professional).
     form_1099_threshold: float = 2000.0
+    # Time off: the hours a PTO / Holiday / Sick day fills in on the Time Card when that type is chosen (the day can
+    # still be changed, e.g. 4 for a half day), and whether hourly people are paid for those hours at their regular
+    # rate. Salaried pay never changes. A "Closed" day (business closed) is always 0 hours and unpaid for hourly.
+    pto_hours: float = 8.0
+    holiday_hours: float = 8.0
+    sick_hours: float = 8.0
+    pto_paid: bool = True
+    holiday_paid: bool = True
+    sick_paid: bool = True
     # Branding. The logo image itself is stored by storage.py on a hidden "Branding" sheet (TimecardBook.logo_png).
     brand_color: str = "#1F3A5F"
     logo_on_checks: bool = True   # voucher stubs; the check face too on blank stock only
@@ -90,10 +99,11 @@ class TimeEntry:
     out2: time | None = None
     lunch_deduct_min: int = 0
     notes: str = ""
-    # Salaried people: the day's hours typed directly (replaces the punches when set), and what kind of hours they
-    # are. PTO / Holiday / Sick hours are leave, not hours worked.
+    # The day's hours typed directly (replaces the punches when set): salaried people's hours, or a time off day's
+    # hours (filled from Company Settings when the type is chosen). PTO / Holiday / Sick hours are time off, not
+    # hours worked; a Closed day (business closed) is 0 hours. An hourly person's worked hours are always punches.
     salary_hours: Decimal | None = None
-    hours_type: str = "Worked"   # Worked | PTO | Holiday | Sick
+    hours_type: str = "Worked"   # Worked | PTO | Holiday | Sick | Closed
 
     @property
     def key(self) -> tuple[str, date]:
@@ -101,7 +111,7 @@ class TimeEntry:
 
     def is_empty(self) -> bool:
         return not any((self.in1, self.out1, self.in2, self.out2, self.lunch_deduct_min, self.notes)) \
-            and self.salary_hours is None
+            and self.salary_hours is None and (self.hours_type or "").strip().lower() in ("", "worked")
 
 
 @dataclass
@@ -125,6 +135,10 @@ class PayrollRecord:
     net_pay: Decimal = Decimal("0")
     memo: str = ""
     voided: bool = False
+    # Paid time off (PTO / Holiday / Sick) on this check: the hours and, for hourly people, the pay for them (part
+    # of gross_pay). Salaried checks record the hours with no extra pay.
+    leave_hours: Decimal = Decimal("0")
+    leave_pay: Decimal = Decimal("0")
 
 
 @dataclass
@@ -145,6 +159,8 @@ class HoursSummary:
     regular: Decimal = Decimal("0")
     overtime: Decimal = Decimal("0")
     by_week: list[tuple[date, Decimal]] = field(default_factory=list)  # (week start, total hours)
+    # Time off hours the company pays hourly people for (Company Settings); never part of regular/overtime.
+    paid_leave: Decimal = Decimal("0")
 
     @property
     def total(self) -> Decimal:

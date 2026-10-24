@@ -61,7 +61,8 @@ class SalaryHoursCalcTests(unittest.TestCase):
 
     def test_is_empty(self) -> None:
         self.assertFalse(TimeEntry(MON, "E1", salary_hours=D("0")).is_empty())
-        self.assertTrue(TimeEntry(MON, "E1", hours_type="PTO").is_empty())   # a type with no hours is nothing
+        self.assertFalse(TimeEntry(MON, "E1", hours_type="Closed").is_empty())   # a marked day is kept
+        self.assertTrue(TimeEntry(MON, "E1", hours_type="Worked").is_empty())
 
 
 class SalaryHoursStorageTests(unittest.TestCase):

@@ -460,6 +460,11 @@ def is_salaried(emp: Employee) -> bool:
     return (emp.pay_type or "").strip().lower() == "salary"
 
 
+def _has_pay_hours(hours: HoursSummary) -> bool:
+    """Hours worked or paid time off: something an hourly person is paid for."""
+    return hours.total > 0 or hours.paid_leave > 0
+
+
 def fmt_money(x) -> str:
     return f"${Decimal(x):,.2f}"
 
@@ -861,8 +866,8 @@ class _DayRow:
         self.cells: dict[str, tk.Entry] = {}
         self.lunch: ttk.Spinbox | None = None
         self.notes: tk.Entry | None = None
-        self.salary: tk.Entry | None = None       # salaried: hours typed directly (replaces the punches)
-        self.kind: ttk.Combobox | None = None     # salaried: Worked / PTO / Holiday / Sick
+        self.salary: tk.Entry | None = None       # typed hours: salaried hours, or a time off day's hours
+        self.kind: ttk.Combobox | None = None     # Worked / PTO / Holiday / Sick / Closed
         self.hours_lbl: ttk.Label | None = None
         self.day_lbl: ttk.Label | None = None
 
@@ -909,7 +914,9 @@ class TimeCardTab(ttk.Frame):
         ttk.Label(self, text="Type times like 8, 830a, 5:15 pm or 17:15. Tab / Enter moves to the next cell.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
         self.v_salary_hint = tk.StringVar(value="")   # set in rebuild() for salaried people
-        ttk.Label(self, textvariable=self.v_salary_hint, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+        hint = ttk.Label(self, textvariable=self.v_salary_hint, style="Muted.TLabel", justify="left")
+        hint.pack(anchor="w", fill="x", pady=(0, 6))
+        hint.bind("<Configure>", lambda e: hint.configure(wraplength=max(e.width - 8, 200)))
 
         self.scroll = ScrollFrame(self)
         self.scroll.pack(fill="both", expand=True)
@@ -1045,13 +1052,11 @@ class TimeCardTab(ttk.Frame):
             return
         start, end = period
         emp = self.book.employees.get(eid)
-        # Salaried people (or anyone with typed hours / leave already in this period) get Salary hours + Type boxes.
-        salaried = (emp is not None and is_salaried(emp)) or any(
-            e.salary_hours is not None or calc.is_leave(e) for e in self.book.entries_for(eid, start, end))
-        heads = ["Day / Date", "In", "Out", "In", "Out", "Lunch Deduct (min)", ""]
-        if salaried:
-            heads += ["Salary hours", "Type"]
-        heads += ["Hours", "Notes"]
+        # Everyone gets a Type box (Worked / PTO / Holiday / Sick / Closed). Salaried people type their hours; for
+        # hourly people worked hours are the punches and the hours box is only for a time off day's hours.
+        salaried = self._salaried = emp is not None and is_salaried(emp)
+        heads = ["Day / Date", "In", "Out", "In", "Out", "Lunch Deduct (min)", "",
+                 "Salary hours" if salaried else "Time off hrs", "Type", "Hours", "Notes"]
         c_hours, c_notes, ncols = len(heads) - 2, len(heads) - 1, len(heads)
         for c, h in enumerate(heads):
             ttk.Label(g, text=h, style="GridHead.TLabel").grid(row=0, column=c, sticky="w", padx=4, pady=(0, 4))
@@ -1059,9 +1064,13 @@ class TimeCardTab(ttk.Frame):
         for c in range(ncols):
             g.columnconfigure(c, weight=0)
         g.columnconfigure(c_notes, weight=1)
-        self.v_salary_hint.set("Salaried: type the day's hours in Salary hours (it replaces In/Out), and choose PTO, "
-                               "Holiday or Sick for time off. Time off isn't counted as hours worked."
-                               if salaried else "")
+        self.v_salary_hint.set(
+            "Salaried: type the day's hours in Salary hours (it replaces In/Out). " if salaried else
+            "Worked hours come from the In/Out times. ")
+        self.v_salary_hint.set(self.v_salary_hint.get() +
+                               "Choose PTO, Holiday or Sick and the day's hours fill in from Company Settings (change "
+                               "them for a part day); Closed means the business was closed (0 hours). Time off isn't "
+                               "counted as hours worked.")
 
         r = 2
         d = start
@@ -1092,19 +1101,17 @@ class TimeCardTab(ttk.Frame):
             b = ttk.Button(g, text="+Lunch", width=7, takefocus=0, style="Small.TButton",
                            command=lambda rw=row: self._add_lunch(rw))
             b.grid(row=r, column=6, padx=(0, 6), pady=2)
-            if salaried:
-                se = tk.Entry(g, width=7, font=F("base"), relief="flat", bd=1, justify="center")
-                paint_cell(se)
-                se.insert(0, fmt_hours(entry.salary_hours) if entry.salary_hours is not None else "")
-                se.grid(row=r, column=7, padx=3, pady=2, ipady=2)
-                self._bind_cell(se, idx, lambda rw=row, w=se: self._commit_salary_hours(rw, w))
-                row.salary = se
-                kb = ttk.Combobox(g, values=list(calc.HOURS_TYPES), state="readonly", width=8)
-                kb.set(calc.hours_type(entry))
-                kb.grid(row=r, column=8, padx=3, pady=2, sticky="w")
-                kb.bind("<<ComboboxSelected>>", lambda ev, rw=row, w=kb: self._update_entry(rw, hours_type=w.get()))
-                row.kind = kb
-            row.hours_lbl = ttk.Label(g, text=self._hours_text(entry), width=11, anchor="e",
+            se = tk.Entry(g, width=7, font=F("base"), relief="flat", bd=1, justify="center")
+            paint_cell(se)
+            se.grid(row=r, column=7, padx=3, pady=2, ipady=2)
+            self._bind_cell(se, idx, lambda rw=row, w=se: self._commit_salary_hours(rw, w))
+            row.salary = se
+            kb = ttk.Combobox(g, values=list(calc.HOURS_TYPES), state="readonly", width=8)
+            kb.grid(row=r, column=8, padx=3, pady=2, sticky="w")
+            kb.bind("<<ComboboxSelected>>", lambda ev, rw=row, w=kb: self._choose_type(rw, w.get()))
+            row.kind = kb
+            self._fill_hours_type(row, entry)
+            row.hours_lbl = ttk.Label(g, text=self._hours_text(entry), width=13, anchor="e",
                                       style="Hours.TLabel")
             row.hours_lbl.grid(row=r, column=c_hours, padx=6, pady=2, sticky="e")
             ne = tk.Entry(g, font=F("base"), relief="flat", bd=1)
@@ -1121,7 +1128,7 @@ class TimeCardTab(ttk.Frame):
                 lbl_txt = f"Week of {max(ws, start):%m/%d} subtotal"
                 ttk.Label(g, text=lbl_txt, style="Subtotal.TLabel").grid(row=r, column=0, columnspan=c_hours,
                                                                        sticky="e", padx=6, pady=(2, 2))
-                wl = ttk.Label(g, text="0.00", style="SubtotalVal.TLabel", width=11, anchor="e")
+                wl = ttk.Label(g, text="0.00", style="SubtotalVal.TLabel", width=13, anchor="e")
                 wl.grid(row=r, column=c_hours, padx=6, sticky="e")
                 self.week_lbls[ws] = wl
                 r += 1
@@ -1213,8 +1220,8 @@ class TimeCardTab(ttk.Frame):
 
     @staticmethod
     def _hours_text(e: TimeEntry) -> str:
-        """The day's hours; time off is labelled ('8.00 PTO') since it isn't counted as hours worked."""
-        return fmt_hours(calc.entry_hours(e)) + (f" {calc.hours_type(e)}" if calc.is_leave(e) else "")
+        """The day's hours; time off and closed days are labelled ('8.00 PTO', '0.00 Closed')."""
+        return fmt_hours(calc.entry_hours(e)) + ("" if calc.hours_type(e) == "Worked" else f" {calc.hours_type(e)}")
 
     def _commit_salary_hours(self, row: _DayRow, w: tk.Entry) -> None:
         if not w.winfo_exists() or self.book is None:
@@ -1231,6 +1238,32 @@ class TimeCardTab(ttk.Frame):
             w.delete(0, "end")
             w.insert(0, shown)
         self._update_entry(row, salary_hours=hours)
+
+    def _choose_type(self, row: _DayRow, kind: str) -> None:
+        """Type chosen: a PTO / Holiday / Sick day takes its hours from Company Settings; Closed is 0 hours; back to
+        Worked drops the time off hours so the punches (or the salaried hours typed next) count again."""
+        if self.book is None:
+            return
+        cur = self.book.get_entry(row.eid, row.d)
+        changes: dict = {"hours_type": kind}
+        if kind in calc.LEAVE_TYPES:
+            changes["salary_hours"] = calc.leave_default_hours(self.book.company, kind)
+        elif calc.hours_type(cur) != "Worked" or kind == "Closed":
+            changes["salary_hours"] = None
+        self._update_entry(row, **changes)
+        self._fill_hours_type(row, self.book.get_entry(row.eid, row.d))
+
+    def _fill_hours_type(self, row: _DayRow, e: TimeEntry) -> None:
+        """Show the day's typed hours and type. For hourly people the hours box is only open on a time off day
+        (or when hours were already typed there, so they can be cleared)."""
+        se = row.salary
+        se.configure(state="normal")
+        set_invalid(se, False)
+        se.delete(0, "end")
+        se.insert(0, fmt_hours(e.salary_hours) if e.salary_hours is not None else "")
+        if not (getattr(self, "_salaried", False) or calc.is_leave(e) or e.salary_hours is not None):
+            se.configure(state="disabled")
+        row.kind.set(calc.hours_type(e))
 
     def _commit_lunch(self, row: _DayRow) -> None:
         sp = row.lunch
@@ -1270,10 +1303,7 @@ class TimeCardTab(ttk.Frame):
         row.notes.delete(0, "end")
         row.notes.insert(0, e.notes)
         if row.salary is not None:
-            set_invalid(row.salary, False)
-            row.salary.delete(0, "end")
-            row.salary.insert(0, fmt_hours(e.salary_hours) if e.salary_hours is not None else "")
-            row.kind.set(calc.hours_type(e))
+            self._fill_hours_type(row, e)
 
     def update_totals(self) -> None:
         if self.book is None or not self.rows:
@@ -1290,7 +1320,7 @@ class TimeCardTab(ttk.Frame):
         summary = calc.summarize_hours(entries, self.book.company, start, end)
         leave = sum((calc.leave_hours(e) for e in entries), Decimal("0"))
         self.v_leave.set(fmt_hours(leave))
-        self._layout_footer(show_leave=leave > 0 or any(r.salary is not None for r in self.rows))
+        self._layout_footer(show_leave=leave > 0 or getattr(self, "_salaried", False))
         weeks = dict(summary.by_week)
         for ws, lbl in self.week_lbls.items():
             lbl.configure(text=fmt_hours(weeks.get(ws, Decimal("0"))))
@@ -2136,6 +2166,8 @@ class YearLogTab(ttk.Frame):
 
     @staticmethod
     def _punches(e: TimeEntry) -> str:
+        if calc.hours_type(e) != "Worked":
+            return ""   # the Time off column says what the day was
         if e.salary_hours is not None:
             return "hours entered"
         pairs = [(a, b) for a, b in ((e.in1, e.out1), (e.in2, e.out2)) if a or b]
@@ -2169,7 +2201,8 @@ class YearLogTab(ttk.Frame):
                              values=(self._period_label(g), self._emp_name(g.employee_id), fmt_hours(g.hours),
                                      g.leave_text(), g.lunch_minutes or "", g.notes_text()))
             for e in g.entries:
-                off = f"{calc.hours_type(e)} {fmt_hours(calc.leave_hours(e))}" if calc.is_leave(e) else ""
+                off = (f"{calc.hours_type(e)} {fmt_hours(calc.leave_hours(e))}" if calc.is_leave(e)
+                       else "Closed" if calc.is_closed(e) else "")
                 self.tree.insert(pid, "end", iid=f"{e.employee_id}|{e.work_date.isoformat()}|day",
                                  values=(f"{e.work_date:%a %m/%d}   {self._punches(e)}", "",
                                          fmt_hours(calc.day_hours(e)), off, e.lunch_deduct_min or "", e.notes))
@@ -2541,13 +2574,13 @@ class PayrollTab(ttk.Frame):
         return idx
 
     def _unpaid_hourly(self, period: tuple[date, date]) -> set[str]:
-        """Active hourly people with hours in `period` and no (non-voided) check for it yet."""
+        """Active hourly people with hours (or paid time off) in `period` and no (non-voided) check for it yet."""
         start, end = period
         paid = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
         return {e.employee_id for e in self.book.active_employees()
                 if not is_salaried(e) and e.employee_id not in paid
-                and calc.summarize_hours(self.book.entries_for(e.employee_id, start, end),
-                                         self.book.company, start, end).total > 0}
+                and _has_pay_hours(calc.summarize_hours(self.book.entries_for(e.employee_id, start, end),
+                                                        self.book.company, start, end))}
 
     def _hours_elsewhere(self, eid: str, current: tuple[date, date]) -> tuple[date, date] | None:
         """The latest other period (up to today) where `eid` has unpaid hours, if any."""
@@ -2610,9 +2643,10 @@ class PayrollTab(ttk.Frame):
     def default_memo(start: date, end: date, hours: HoursSummary, salaried: bool = False) -> str:
         span = f"{start:%m/%d}\u2013{end:%m/%d/%Y}" if start.year == end.year else \
             f"{start:%m/%d/%Y}\u2013{end:%m/%d/%Y}"
+        off = f" + {hours.paid_leave:.2f} time off" if hours.paid_leave else ""
         if salaried:
             return f"Salary {span}" + (f" \u00b7 {hours.total:.2f} hrs" if hours.total else "")
-        return f"Contract labor {span} \u00b7 {hours.total:.2f} hrs"
+        return f"Contract labor {span} \u00b7 {hours.total:.2f} hrs{off}"
 
     def _compute(self, item: dict, check_number: int, check_date: date) -> PayrollRecord:
         start, end = self.preview_period
@@ -2638,7 +2672,7 @@ class PayrollTab(ttk.Frame):
         for emp in self.book.active_employees():
             entries = self.book.entries_for(emp.employee_id, start, end)
             hours = calc.summarize_hours(entries, self.book.company, start, end)
-            if hours.total <= 0 and not is_salaried(emp):   # salaried people are paid every period
+            if not _has_pay_hours(hours) and not is_salaried(emp):   # salaried people are paid every period
                 no_hours.append(emp)
                 continue
             if not self.book.has_pay_rate(emp.employee_id):
@@ -2933,6 +2967,12 @@ class CompanyTab(ttk.Frame):
         ("Pay", "overtime_threshold_weekly", "Overtime after (hrs/week)", "float", None),
         ("Pay", "overtime_multiplier", "Overtime multiplier", "float", None),
         ("Pay", "form_1099_threshold", "1099 review threshold ($)", "float", None),
+        ("Time off", "pto_hours", "PTO day (hours)", "float", None),
+        ("Time off", "holiday_hours", "Holiday (hours)", "float", None),
+        ("Time off", "sick_hours", "Sick day (hours)", "float", None),
+        ("Time off", "pto_paid", "PTO", "bool", "Pay hourly people for PTO hours"),
+        ("Time off", "holiday_paid", "Holiday", "bool", "Pay hourly people for holiday hours"),
+        ("Time off", "sick_paid", "Sick", "bool", "Pay hourly people for sick hours"),
         ("Checks", "check_layout", "Check layout", "radio", CHECK_LAYOUTS),
         ("Checks", "manual_sheet_width", "Sheet width (inches)", "float", None),
         ("Checks", "manual_sheet_height", "Sheet height (inches)", "float", None),
@@ -2967,7 +3007,8 @@ class CompanyTab(ttk.Frame):
         sf.pack(fill="both", expand=True)
         body = sf.inner
         frames: dict[str, ttk.Frame] = {}
-        layout = {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1), "Checks": (1, 1)}
+        layout = {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1), "Checks": (1, 1),
+                  "Time off": (2, 1)}
         rows: dict[str, int] = {}
         for section, (r, c) in layout.items():
             lf = ttk.LabelFrame(body, text=section, padding=12)
@@ -3207,13 +3248,13 @@ class CompanyTab(ttk.Frame):
         self._sections_single = single
         f = self.section_frames
         if single:
-            order = ("Company", "Bank", "Branding", "Pay", "Checks")
+            order = ("Company", "Bank", "Branding", "Pay", "Time off", "Checks")
             for i, name in enumerate(order):
                 f[name].grid_configure(row=i, column=0)
             self.adv_outer.grid_configure(row=len(order), column=0, columnspan=1)
         else:
             for name, (r, c) in {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1),
-                                 "Checks": (1, 1)}.items():
+                                 "Checks": (1, 1), "Time off": (2, 1)}.items():
                 f[name].grid_configure(row=r, column=c)
             self.adv_outer.grid_configure(row=3, column=0, columnspan=2)
 
@@ -3294,6 +3335,8 @@ class CompanyTab(ttk.Frame):
             errors.append("Account number may contain only digits, spaces and dashes.")
         if not 0 <= changes.get("default_lunch_minutes", 0) <= 240:
             errors.append("Default lunch deduct must be 0 to 240 minutes.")
+        if not all(0 <= changes.get(k, 8) <= 24 for k in ("pto_hours", "holiday_hours", "sick_hours")):
+            errors.append("PTO, Holiday and Sick day hours must be between 0 and 24.")
         if changes.get("overtime_enabled"):
             if changes.get("overtime_multiplier", 1) < 1:
                 errors.append("Overtime multiplier must be at least 1.")

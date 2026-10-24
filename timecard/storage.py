@@ -38,14 +38,14 @@ TIMELOG_HEADERS = ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2
 PAYROLL_HEADERS = ["CheckNumber", "CheckDate", "PeriodStart", "PeriodEnd", "EmployeeID", "Employee",
                    "RegularHours", "OvertimeHours", "RegularPay", "OvertimePay", "GrossPay",
                    "FederalTax", "StateTax", "SocialSecurity", "Medicare", "OtherDeductions",
-                   "NetPay", "Memo", "Voided"]
+                   "NetPay", "Memo", "Voided", "LeaveHours", "LeavePay"]
 # PayrollRecord attribute for each Payroll column (same order as PAYROLL_HEADERS).
 PAYROLL_FIELDS = ["check_number", "check_date", "period_start", "period_end", "employee_id",
                   "employee_name", "regular_hours", "overtime_hours", "regular_pay", "overtime_pay",
                   "gross_pay", "federal_tax", "state_tax", "social_security", "medicare",
-                  "other_deductions", "net_pay", "memo", "voided"]
+                  "other_deductions", "net_pay", "memo", "voided", "leave_hours", "leave_pay"]
 PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "state_tax",
-                 "social_security", "medicare", "other_deductions", "net_pay"}
+                 "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # Hours WORKED (column I): 0 for PTO/Holiday/Sick (L); the typed salary hours (K) when set; else the punches.
@@ -357,7 +357,7 @@ class TimecardBook:
                 continue
             if name in ("check_date", "period_start", "period_end"):
                 kwargs[name] = _to_date(raw) or check_date
-            elif name in ("regular_hours", "overtime_hours") or name in PAYROLL_MONEY:
+            elif name in ("regular_hours", "overtime_hours", "leave_hours") or name in PAYROLL_MONEY:
                 kwargs[name] = calc.money(_to_decimal(raw))
             elif name == "voided":
                 kwargs[name] = _to_bool(raw)
@@ -466,12 +466,12 @@ class TimecardBook:
                        entry.in1, entry.out1, entry.in2, entry.out2,
                        int(entry.lunch_deduct_min or 0), HOURS_FORMULA.format(r=r), entry.notes,
                        float(entry.salary_hours) if entry.salary_hours is not None else None,
-                       calc.hours_type(entry) if calc.is_leave(entry) else ""])
+                       "" if calc.hours_type(entry) == "Worked" else calc.hours_type(entry)])
             _fmt_row(ws, r, {1: FMT_DAY_DATE, 4: FMT_TIME, 5: FMT_TIME, 6: FMT_TIME, 7: FMT_TIME,
                              9: FMT_HOURS, 11: FMT_HOURS})
 
     def _write_payroll(self, ws: Worksheet) -> None:
-        _write_header(ws, PAYROLL_HEADERS, [12, 12, 12, 12, 12, 22] + [13] * 11 + [24, 8])
+        _write_header(ws, PAYROLL_HEADERS, [12, 12, 12, 12, 12, 22] + [13] * 11 + [24, 8, 12, 12])
         for rec in sorted(self.payroll, key=lambda p: p.check_number):
             row: list[Any] = []
             for name in PAYROLL_FIELDS:
@@ -482,7 +482,8 @@ class TimecardBook:
                     v = "Yes" if v else "No"
                 row.append(v)
             ws.append(row)
-            formats = {2: FMT_DATE, 3: FMT_DATE, 4: FMT_DATE, 7: FMT_HOURS, 8: FMT_HOURS}
+            formats = {2: FMT_DATE, 3: FMT_DATE, 4: FMT_DATE, 7: FMT_HOURS, 8: FMT_HOURS,
+                       PAYROLL_FIELDS.index("leave_hours") + 1: FMT_HOURS}
             formats.update({PAYROLL_FIELDS.index(f) + 1: FMT_MONEY for f in PAYROLL_MONEY})
             _fmt_row(ws, ws.max_row, formats)
 

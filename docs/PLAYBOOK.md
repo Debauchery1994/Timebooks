@@ -93,6 +93,14 @@ Nothing is deleted; turning it back on brings everything back.
 All-salary business: **Time cards off** → Pay & Checks pays salaried people every period with no hours needed (that
 part already works), and the memo/stub leaves out hours.
 
+**Time off rules (requested 2026-10-24):** a Type on every person's day (Worked / PTO / Holiday / Sick / Closed).
+- [x] Company Settings → Time off: hours for a PTO, Holiday and Sick day (default 8), and whether hourly people are paid
+      for each; choosing the type fills the day's hours (editable for a part day)
+- [x] Hourly: worked hours stay the punches; paid time off is added to the check at the regular rate, never toward
+      overtime, and shown on the stub and memo (new Payroll columns LeaveHours / LeavePay)
+- [x] Closed (business closed): 0 hours, so salaried time cards don't look like overwork; unpaid for hourly
+- [x] Year Log, printed time card and Time Card label time off and closed days
+
 **Security: don't advertise where the workbook is.** The `.xlsx` itself isn't protected by the PIN, so anyone who
 can find it can open it in GridCraft/Excel and read pay rates.
 - [x] Top banner shows the workbook's file name, not its full path (and so do the "Opened…" / "Created…" messages)

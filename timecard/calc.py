@@ -103,7 +103,8 @@ def pair_hours(t_in: time | None, t_out: time | None) -> Decimal:
     return _hours2(Decimal(_pair_seconds(t_in, t_out)) / 3600)
 
 
-HOURS_TYPES = ("Worked", "PTO", "Holiday", "Sick")
+HOURS_TYPES = ("Worked", "PTO", "Holiday", "Sick", "Closed")
+LEAVE_TYPES = ("PTO", "Holiday", "Sick")
 
 
 def hours_type(e: TimeEntry) -> str:
@@ -113,12 +114,31 @@ def hours_type(e: TimeEntry) -> str:
 
 
 def is_leave(e: TimeEntry) -> bool:
-    return hours_type(e) != "Worked"
+    """PTO / Holiday / Sick (time off)."""
+    return hours_type(e) in LEAVE_TYPES
+
+
+def is_closed(e: TimeEntry) -> bool:
+    """The business was closed that day: 0 hours."""
+    return hours_type(e) == "Closed"
+
+
+def leave_default_hours(company: Company, kind: str) -> Decimal:
+    """Company Settings hours for a PTO / Holiday / Sick day (0 for Worked or Closed), 2 dp, 0-24."""
+    value = getattr(company, f"{kind.lower()}_hours", 0) if kind in LEAVE_TYPES else 0
+    return _hours2(min(max(_dec(value or 0), ZERO), Decimal(24)))
+
+
+def leave_is_paid(company: Company, kind: str) -> bool:
+    """Whether hourly people are paid for this kind of time off (Company Settings)."""
+    return kind in LEAVE_TYPES and bool(getattr(company, f"{kind.lower()}_paid", False))
 
 
 def entry_hours(e: TimeEntry) -> Decimal:
-    """All hours on the day: the salary hours typed in when set, else complete pairs minus the lunch deduct.
-    Never negative, 2 dp."""
+    """All hours on the day: the hours typed in when set, else complete pairs minus the lunch deduct; 0 on a Closed
+    day. Never negative, 2 dp."""
+    if is_closed(e):
+        return ZERO
     if e.salary_hours is not None:
         return _hours2(max(Decimal(str(e.salary_hours)), ZERO))
     secs = _pair_seconds(e.in1, e.out1) + _pair_seconds(e.in2, e.out2)
@@ -212,12 +232,16 @@ class PeriodLog:
         return sum((leave_hours(e) for e in self.entries), ZERO)
 
     def leave_text(self) -> str:
-        """Leave hours by type, e.g. 'PTO 8.00, Sick 4.00' ('' when none)."""
+        """Leave hours by type, plus closed days, e.g. 'PTO 8.00, Sick 4.00, Closed 1 day' ('' when none)."""
         totals: dict[str, Decimal] = {}
         for e in self.entries:
             if is_leave(e):
                 totals[hours_type(e)] = totals.get(hours_type(e), ZERO) + entry_hours(e)
-        return ", ".join(f"{t} {totals[t]:.2f}" for t in HOURS_TYPES if t in totals)
+        parts = [f"{t} {totals[t]:.2f}" for t in LEAVE_TYPES if t in totals]
+        closed = sum(1 for e in self.entries if is_closed(e))
+        if closed:
+            parts.append(f"Closed {closed} day{'s' if closed != 1 else ''}")
+        return ", ".join(parts)
 
     def notes_text(self) -> str:
         """Every day's note in the period, labelled with its day: 'Mon 10/20: picked up tile; Wed 10/22: ...'."""
@@ -235,16 +259,19 @@ def period_log(entries: list[TimeEntry], company: Company) -> list[PeriodLog]:
 
 def summarize_hours(entries: list[TimeEntry], company: Company,
                     start: date, end: date) -> HoursSummary:
-    """Regular/OT for entries within [start, end], OT computed per workweek on in-period days.
+    """Regular/OT for entries within [start, end], OT computed per workweek on in-period days, plus the paid time
+    off hours (never counted toward overtime).
 
     With company.overtime_enabled off (the contractor default) every hour is regular.
     """
     threshold = _dec(company.overtime_threshold_weekly) if company.overtime_enabled else Decimal("Infinity")
     weeks: dict[date, Decimal] = defaultdict(lambda: ZERO)
+    summary = HoursSummary()
     for e in entries:
         if start <= e.work_date <= end:
             weeks[week_start_for(e.work_date, company.week_start)] += day_hours(e)
-    summary = HoursSummary()
+            if is_leave(e) and leave_is_paid(company, hours_type(e)):
+                summary.paid_leave += leave_hours(e)
     for ws in sorted(weeks):
         total = weeks[ws]
         ot = max(total - threshold, ZERO)
@@ -279,14 +306,16 @@ def salary_check_amount(employee: Employee, company: Company) -> Decimal:
 def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *,
                     check_number: int, check_date: date, period_start: date, period_end: date,
                     other_deductions: Decimal = Decimal("0"), memo: str = "") -> PayrollRecord:
-    """Gross, flat-percent withholding estimate and net for one employee/period."""
+    """Gross, flat-percent withholding estimate and net for one employee/period. Hourly people are also paid for
+    paid time off hours at their regular rate; salaried pay is the salary whatever the hours."""
     rate = _dec(employee.pay_rate)
     if employee.pay_type.strip().lower() == "salary":
-        regular_pay, overtime_pay = salary_check_amount(employee, company), money(0)
+        regular_pay, overtime_pay, leave_pay = salary_check_amount(employee, company), money(0), money(0)
     else:
         regular_pay = money(hours.regular * rate)
         overtime_pay = money(hours.overtime * rate * _dec(company.overtime_multiplier))
-    gross = regular_pay + overtime_pay
+        leave_pay = money(hours.paid_leave * rate)
+    gross = regular_pay + overtime_pay + leave_pay
 
     def pct(p: float) -> Decimal:
         return money(gross * _dec(p) / 100)
@@ -316,6 +345,8 @@ def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *
         other_deductions=other,
         net_pay=net,
         memo=memo,
+        leave_hours=_hours2(hours.paid_leave),
+        leave_pay=leave_pay,
     )
 
 

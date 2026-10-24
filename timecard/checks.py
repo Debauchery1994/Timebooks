@@ -284,6 +284,8 @@ def _default_memo(rec: PayrollRecord) -> str:
     memo = f"Contract labor {period}".rstrip()
     if hrs:
         memo += f" · {_hours(hrs)} hrs"
+    if _dec(rec.leave_hours):
+        memo += f" + {_hours(_dec(rec.leave_hours))} time off"
     return memo
 
 
@@ -536,8 +538,9 @@ def _draw_manual_slot(c: rl_canvas.Canvas, company: Company, rec: PayrollRecord,
         hrs = _dec(rec.regular_hours) + _dec(rec.overtime_hours)
         items = [("DATE", _date(rec.check_date)), ("TO", payee),
                  ("AMOUNT", f"${_money(rec.net_pay)}")]
-        if hrs:
-            items.append(("HOURS", _hours(hrs)))
+        off = _dec(rec.leave_hours)
+        if hrs or off:
+            items.append(("HOURS", _hours(hrs) + (f" + {_hours(off)} off" if off else "")))
         for lab, val in items:
             pg.text(x0, t, lab, "Helvetica", 5.5, color=GREY)
             pg.fit_text(x0, t + 0.13, val, tw, "Helvetica-Bold" if lab == "AMOUNT" else "Helvetica", 8, 5.5)
@@ -621,6 +624,8 @@ def _draw_simple_stub(pg: _Page, top: float, company: Company, rec: PayrollRecor
         lines += [("Regular Hours", _hours(reg)), ("Overtime Hours", _hours(ot))]
     elif reg:
         lines.append(("Hours", _hours(reg)))
+    if _dec(rec.leave_hours):
+        lines.append(("Time Off Hours", _hours(_dec(rec.leave_hours))))
     lines += [("Amount", _money(rec.gross_pay)), ("Adjustment", _signed_adjustment(rec))]
     t = ht + 0.38
     for lab, val in lines:
@@ -1041,12 +1046,14 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
             note = e.notes
             if calc.is_leave(e):
                 note = f"{calc.hours_type(e)} {calc.leave_hours(e):.2f} h" + (f"; {e.notes}" if e.notes else "")
+            elif calc.is_closed(e):
+                note = "Closed" + (f"; {e.notes}" if e.notes else "")
             elif e.salary_hours is not None:
                 note = "Hours entered" + (f"; {e.notes}" if e.notes else "")
             row = [d.strftime("%a %m/%d/%Y"), calc.format_time(e.in1), calc.format_time(e.out1),
                    calc.format_time(e.in2), calc.format_time(e.out2),
                    str(e.lunch_deduct_min) if e.lunch_deduct_min else "",
-                   _hours(hrs) if (hrs or e.in1 or e.out1 or e.salary_hours is not None) else "",
+                   _hours(hrs) if (hrs or e.in1 or e.out1 or e.salary_hours is not None or calc.is_closed(e)) else "",
                    Paragraph(_esc(note), notes_style) if note else ""]
         else:
             row = [d.strftime("%a %m/%d/%Y"), "", "", "", "", "", "", ""]
