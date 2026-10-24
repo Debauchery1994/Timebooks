@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro into **TimeBooks**, a small-business b
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
-_Last updated: 2026-10-24 · published: 1.2.0 · ready to publish: 1.3.0 · next: 1.4.0_
+_Last updated: 2026-10-24 · published: 1.3.1 · in progress: 1.3.2 · next: 1.4.0_
 
 ---
 
@@ -51,13 +51,16 @@ Guiding rules (these come from the decisions already made in the app):
 | Release | What the owner gets | Size |
 |---|---|---|
 | 1.2.0 | ✅ Released: time off, tab locks, features on/off, code split | — |
-| **1.3.0** | **TimeBooks**: the new name; **Expenses & receipts** (by hand, scanned, scanner folder); recurring expenses; a mileage log; owners as a pay group; bank statements in and matched; phone photos over Wi-Fi | XL |
-| 1.4.0 | **Vendors & Pay Bills**: print checks to vendors on the same checkbook; positive-pay file for the bank | M |
-| 1.5.0 | **Sales** tab: record money coming in; simple invoices with a printable PDF | M |
-| 1.6.0 | **Reports**: Profit & Loss, spending by category, mileage, tax-pro export pack | M |
-| 2.0.0 | Several businesses in one app, first-run wizard, in-app help, code-signed installer | M |
+| 1.3.0 / 1.3.1 | ✅ Released: TimeBooks, Expenses & receipts (scan, phone, bank statements), recurring, mileage, owners | — |
+| **1.3.2** | **Third In/Out pair**, **clock in/out from a phone** (QR code + 4-digit PIN), duplicate check, W-9 on file, text PDFs read directly | M |
+| 1.4.0 | **Vendors & accounts**: vendors, Pay Bills on the same checkbook, Unknown vendors, positive pay; accounts / paid from with balances | M |
+| 1.5.0 | **Money foundations & safety**: owner draws / contributions / loans, monthly reconcile, close a month or year, change history, split expenses, restore from backup, encrypted backups, PC / thumb-drive copy check | L |
+| 1.6.0 | **The shop**: jobs with mechanic commission (cost vs. brought in), PTO balances | M |
+| 1.7.0 | **Sales**: sales, invoices (print / save / email), who owes what (aging), sales tax report | M |
+| 1.8.0 | **Reports & taxes**: Profit & Loss, tax-pro pack, quarterly estimated tax, 1099 reference sheet, equipment / assets | M |
+| 2.0.0 | Home tab, reminders, search everywhere; several businesses; first-run wizard, in-app help, code-signed installer; budgets | M |
 
-1.4.0 and 1.5.0 are independent and can swap order.
+Order decided 2026-10-24 from the owner's answers; 1.6.0 (the shop) can move earlier if it's needed sooner.
 
 ---
 
@@ -67,8 +70,7 @@ _Decided 2026-10-24:_ nothing has been published since 1.2.0, so the rename, Exp
 expenses / mileage / owners, and bank statements / phone photos all ship together as 1.3.0 (built in three
 parts below, each reviewed before the next).
 
-- [ ] Publish `v1.3.0` as the only download (delete the 1.2.0 release); the owner uninstalls TimeCard Pro and
-      installs TimeBooks
+- [x] Published `v1.3.0` (2026-10-24) and `v1.3.1` (expense-form saves fixed, Expenses buttons always visible)
 
 ### Part 1 — TimeBooks: the new name, Expenses and receipt scanning
 
@@ -201,7 +203,7 @@ On the Employees tab a person can be an **Owner**: no payroll checks (a sole pro
 - [x] `Mileage` sheet: `TripID | Date | PersonID | Purpose | From | To | Miles | Rate | Amount | Notes`
 - [x] `Employee.pay_type` "Owner" (Pay & Checks and 1099 totals leave owners out; their history stays)
 - [x] Expense `PersonID` column ("on whose account"), so gas paid by the owner shows on their account
-- [ ] Mileage and owner totals feed the 1.6.0 reports
+- [ ] Mileage and owner totals feed the 1.8.0 reports
 
 **Part 2 is done when** a month's rent repeats on its own, a week of trips adds up correctly, and an owner's gas
 and miles show on their account without a paycheck.
@@ -218,7 +220,7 @@ existing expense (same amount, close date); unmatched money out can become Draft
 - [x] Statement PDF / scan → rows: text PDFs read directly (pypdfium2 text), scans through the receipt reader; the
       owner checks the rows before anything is matched, and can save them as a CSV
 - [x] Matching rules and a review list (matched / possible / unmatched); nothing changes without the owner's OK
-- [x] Money in is kept for the Sales tab (1.5.0) to match deposits
+- [x] Money in is kept for the Sales tab (1.7.0) to match deposits
 
 #### B. Phone photos over Wi-Fi
 **Owner sees:** **Scan Receipt → From my phone**: a QR code and a short web address; the phone (same Wi-Fi) opens it,
@@ -233,7 +235,21 @@ takes photos of receipts, and they arrive as Drafts. No app to install and nothi
 **Part 3 is done when** a real bank statement (CSV and PDF) matches against the expenses and a phone photo arrives
 as a draft.
 
-## 1.4.0 — Vendors and paying bills by check
+## 1.3.2 — Time clock and quick wins
+
+- [ ] **Third In/Out pair** on the Time Card for extra breaks (owner: immediate need). TimeLog `In3 | Out3`, the Hours
+      formula, the printed time card and the Year Log; schema version 6
+- [ ] **Clock in / out from a phone**: a fixed QR code (print it, stick it on the wall) for an upload-style page served
+      while TimeBooks is open, on the local network only. The person types the **4-digit clock PIN** set on their
+      employee page (stored hashed); TimeBooks fills their next empty In/Out for today and the phone shows "clocked
+      IN 8:02 AM". Wrong PINs lock that phone out for a while and too many stop the page; the owner still approves
+      time cards. Company Settings: turn it on, the port, a new code if it ever leaks
+- [ ] **Duplicate check** (owner: high priority): warn when a new, scanned, phone or bank-imported expense matches one
+      already entered (same amount, close date, similar vendor)
+- [ ] **W-9 on file** checkbox and date on the employee record (no tax IDs stored)
+- [ ] **Text PDFs read directly** (emailed receipts): the PDF's own text instead of OCR, faster and exact
+
+## 1.4.0 — Vendors and accounts
 
 **Owner sees:** a **Vendors** list (name, address, phone, default category, "send a 1099"), and **Pay Bills**: pick a
 vendor, amount, memo, and which expenses or bills it pays, then print. The check prints with the same layouts
@@ -255,10 +271,32 @@ and alignment as payroll checks.
       the business's bank asks for (from the parking lot)
 - [ ] Features switch **Vendor checks**; Locked by PIN box for the new tab
 
-**Done when** a vendor check and a payroll check print on the same stock with consecutive numbers and both appear
-in the register.
+- [ ] **Accounts / paid from**: name the bank accounts and cards, say which one paid each expense or check, a
+      balance per account (bank import and reconcile use it)
 
-## 1.5.0 — Sales / money in
+**Done when** a vendor check and a payroll check print on the same stock with consecutive numbers and both appear
+in the register, and every expense and check says which account paid it.
+
+## 1.5.0 — Money foundations and safety
+
+- [ ] **Owner draws, contributions and loans** (principal isn't an expense), so Profit & Loss isn't thrown off
+- [ ] **Monthly reconcile**: enter the statement's ending balance; see what's missing or extra until it agrees
+- [ ] **Close a month or year**: past periods locked once the books go to the tax pro (unlock with the PIN)
+- [ ] **Change history**: a hidden sheet of every change to money (what, old → new, when)
+- [ ] **Split an expense** across categories
+- [ ] **Restore from backup**: pick a backup by date, see what's in it, restore it as a copy, then switch
+- [ ] **Encrypted backups** for cloud folders (a password-protected copy)
+- [ ] **PC / thumb-drive copy check**: the shop runs TimeBooks on one PC and a thumb drive; TimeBooks notices when the
+      other copy of the workbook is newer and asks which to keep, so work isn't lost between the two
+
+## 1.6.0 — The shop
+
+- [ ] **Jobs**: tag hours, parts / expenses and mileage to a job (or customer); each mechanic's **commission rate**;
+      per job and per mechanic: what they cost vs. what they brought in
+- [ ] **PTO balances** by year, blank by default, with the shop's rule ready to pick: 1 paid week a year after an
+      employee's first year; earned, used, left per person
+
+## 1.7.0 — Sales / money in
 
 **Owner sees:** a **Sales** tab. Record a sale or deposit: date, customer, amount, sales tax collected, payment
 method, category (service, product, other), invoice/reference #, memo; attach a document. Month and customer filters
@@ -269,22 +307,34 @@ and totals, same as the other tabs.
 - [ ] `Customers` list (optional; free-typed names work too)
 - [ ] Sales tax collected shown separately (it's owed to the state, not income)
 - [ ] Features switch **Sales**; Locked by PIN box for the new tab
+- [ ] **Who owes what**: open invoices, 30/60/90-day aging, a printable customer statement
+- [ ] Invoices can be **printed, saved, or emailed** through the owner's own email program
+- [ ] **Sales tax report**: collected vs. paid per filing period
 - [ ] **Simple invoices** with a printable PDF (company branding), numbered; "mark paid" records the sale
       (from the parking lot)
 
 **Done when** a month of sales can be entered and the monthly total matches the bank deposits.
 
-## 1.6.0 — Reports
+## 1.8.0 — Reports and taxes
 
 - [ ] **Profit & Loss** for a month, quarter or year: Sales − Expenses by category − Payroll (contract labor/wages)
 - [ ] Spending by category and by vendor; sales by month and by customer
 - [ ] **Tax-pro pack**: one export with the P&L, expenses by Schedule C category, contractor and vendor 1099 totals,
       and the existing annual statements, as PDF and Excel
 - [ ] Every report prints with the company branding and opens in GridCraft
+- [ ] **Quarterly estimated tax helper**: profit so far × the owner's percentage, due dates, payments made
+- [ ] **1099 reference sheet** for the tax preparer: each worker / vendor, total paid, W-9 on file (they add the tax
+      IDs and file; filing yourself through the IRS's IRIS site is the other option: confirm with the preparer)
+- [ ] **Equipment / assets list**: big purchases with date, cost and papers attached, for depreciation and appraisals
+      (owner: sooner rather than later)
 
 **Done when** the tax professional can work from the pack without asking for anything else.
 
 ## 2.0.0 — Polish
+
+- [ ] **Home tab** (money in/out this month, drafts, bills coming due, last backup) with **reminders** on it, never
+      pop-ups; **search everywhere** (Ctrl+F) whenever it fits earlier
+- [ ] **Budgets** per category (later)
 
 - [ ] **Several businesses in one app**: one workbook each, a quick switcher, each with its own settings and
       check numbers (from the parking lot)
@@ -351,73 +401,23 @@ and totals, same as the other tabs.
   locked file
 
 _Moved out of the parking lot 2026-10-24:_ bank statement import (1.3.0), mileage log and owners as a pay group
-(1.3.0), recurring expenses (1.3.0), phone photo upload (1.3.0), positive pay (1.4.0), invoices (1.5.0),
+(1.3.0), recurring expenses (1.3.0), phone photo upload (1.3.0), positive pay (1.4.0), invoices (1.7.0),
 several businesses (2.0.0).
 
-### Suggestions to decide (2026-10-24)
+### Decided 2026-10-24 (owner's answers to the suggestions)
 
-Answer each with **yes / no** and any comment in the brackets at the end, like last time; the yes items get placed
-into releases. _Rec_ is my recommendation: **must** (a gap a bookkeeping app will feel), **good** (clear value, fits
-the plan), **later** (nice, but wait for a need).
+Placed in releases: duplicate check, W-9 on file, text PDFs, phone clock-in (1.3.2); accounts / paid from (1.4.0);
+draws / contributions / loans, reconcile, close periods, change history, split expenses, restore and encrypted
+backups, copy check (1.5.0); jobs with commission, PTO balances (1.6.0); who owes what, print / save / email
+invoices, sales tax report (1.7.0); quarterly estimates, 1099 reference sheet, equipment / assets (1.8.0); home tab,
+reminders, search, budgets (2.0.0).
 
-**Everyday use**
-- **Home tab / dashboard**: this month's money in and out, drafts waiting for review, recurring bills coming due,
-  last backup, uncashed checks. One glance on opening the app. _Rec: good._ [ ]
-- **Reminders**: drafts waiting, a recurring bill due, quarterly tax dates, "no backup in 7 days", 1099 season.
-  Shown on the home tab / status bar, never pop-ups. _Rec: good._ [ ]
-- **Search everywhere** (Ctrl+F): find a vendor, amount, check number or person across expenses, checks, trips and
-  time cards. _Rec: good._ [ ]
-- **Duplicate check**: warn when a new expense or scanned receipt matches one already entered (same vendor, amount,
-  close date), common with phone photos plus bank imports. _Rec: must._ [ ]
-- **Split an expense** across categories (one Costco receipt: supplies + office + meals). _Rec: good._ [ ]
-- **Text PDFs read directly** (emailed receipts and invoices): use the PDF's own text instead of OCR, faster and
-  exact. _Rec: good (small)._ [ ]
+Waiting / later:
+- **Estimates / quotes**: the shop already uses an estimator program; once it's installed on the shop PC, find out its
+  name and whether TimeBooks can read its data instead of building estimates
+- **Direct deposit file** (NACHA): very far down the road (owner wants more experience before touching bank files)
+- **Import from QuickBooks / Wave / a spreadsheet**: only if a business switches from another program mid-year
+- **Spanish and other languages**: to be discussed later
+- **Printable blank time sheets**: not needed (the time clock covers it; the owner enters anything else by hand)
 
-**Money and accounts**
-- **Accounts / paid from**: name the bank accounts and cards ("Chase checking", "Amex"), say which one paid each
-  expense, see a balance per account. Makes bank matching and reports much clearer. _Rec: must (before Reports)._ [ ]
-- **Monthly reconcile**: enter the statement's ending balance, the app shows what's missing or extra until they
-  agree, then marks that month reconciled. _Rec: good (builds on bank import)._ [ ]
-- **Owner draws and contributions, loans**: money the owner takes out or puts in, and loan payments (principal is
-  not an expense), so Profit & Loss isn't thrown off. _Rec: must (before Reports)._ [ ]
-- **Close a month or year**: lock past periods once the books go to the tax pro, so nothing changes by accident
-  (unlock with the PIN). _Rec: good._ [ ]
-- **Change history**: a hidden sheet that records every change to money (what, old → new, when). Peace of mind if a
-  number looks wrong. _Rec: good._ [ ]
-- **Budgets**: a monthly amount per category with progress on the Expenses tab. _Rec: later._ [ ]
-- **Equipment / assets list**: big purchases (tools, trucks, computers) with date and cost for the tax pro's
-  depreciation, plus warranty papers attached. _Rec: later._ [ ]
-
-**Taxes** (always "confirm with your tax professional")
-- **Quarterly estimated tax helper**: profit so far × a percentage the owner sets, due dates, a record of payments
-  made. _Rec: good._ [ ]
-- **Sales tax report**: collected (Sales) vs. paid (expenses), per filing period. _Rec: good (with 1.5.0 Sales)._ [ ]
-- **1099-NEC forms**: print on the IRS forms or export the file the IRS's free e-file system (IRIS) accepts, from
-  the totals the app already has. _Rec: good._ [ ]
-- **W-9 on file** checkbox and date for contractors and 1099 vendors (still no tax IDs stored). _Rec: good (tiny)._ [ ]
-
-**People and time**
-- **Jobs / projects**: tag hours, expenses and mileage to a job or customer and see what each job cost vs. what it
-  brought in. Big for trades and crews. _Rec: good._ [ ]
-- **PTO balances**: hours earned per pay period, used, and left for each person. _Rec: good._ [ ]
-- **Clock-in kiosk**: people clock themselves in and out on a shared PC with their own short code; the owner still
-  approves the time card. _Rec: later._ [ ]
-- **Printable blank time sheets** for crews without a computer, entered later. _Rec: later (tiny)._ [ ]
-- **Direct deposit file** (NACHA) for the bank instead of printing checks. _Rec: later (needs the bank's setup)._ [ ]
-- **W-2 employees** (real withholding tables, 941/W-2 forms): a large, rule-heavy area; today the app pays
-  contractors. _Rec: no, unless the business hires employees; a payroll service is safer._ [ ]
-
-**Customers** (with 1.5.0 Sales)
-- **Who owes what**: open invoices, aging (30/60/90 days), and a printable customer statement. _Rec: good._ [ ]
-- **Estimates / quotes** that turn into an invoice with one click. _Rec: later._ [ ]
-- **Email an invoice** through the owner's own email program (nothing sent by TimeBooks itself). _Rec: good (small)._ [ ]
-
-**Safety and data**
-- **Restore from backup**: pick a backup by date, see what's in it, restore it as a copy, then switch. Backups only
-  matter if restoring is easy. _Rec: must._ [ ]
-- **Encrypted backups** for cloud folders (Google Drive / OneDrive): a password-protected copy. _Rec: good._ [ ]
-- **Import from QuickBooks / Wave / a spreadsheet** (CSV of expenses, customers, vendors) to start mid-year.
-  _Rec: later._ [ ]
-- **Two computers, one workbook** (a shared folder): detect the other PC has it open and refuse to save over it
-  instead of only warning. _Rec: good if the office has more than one PC._ [ ]
-- **Spanish** for the screens and printouts. _Rec: later (only if a user needs it)._ [ ]
+Not doing: **W-2 employees** (a business at that size needs a full payroll service).
