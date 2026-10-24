@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.log
+# client workbooks hold pay rates — keep them out of git
+*.xlsx
+~$*.xlsx
