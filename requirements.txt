@@ -10,3 +10,4 @@ winrt-Windows.Graphics.Imaging==4!10.0.28000.2705; sys_platform == "win32"
 winrt-Windows.Media.Ocr==4!10.0.28000.2705; sys_platform == "win32"
 winrt-Windows.Storage.Streams==4!10.0.28000.2705; sys_platform == "win32"
 pypdfium2==5.14.0
+qrcode==8.2

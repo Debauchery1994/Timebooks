@@ -399,3 +399,11 @@ stored (collect W-9s).
   used once; the rest is "not in expenses" and is ticked to become a Draft (vendor tidied from the description, the
   vendor's last category, memo "From bank statement: ..."). Money in is listed but kept for Sales (1.5.0). The rows
   can be saved as a CSV. Nothing changes until OK.
+
+## Phone photos over Wi-Fi (1.3.0)
+- Scan Receipt > **From my phone (Wi-Fi)…** (`timecard/phone_upload.py`): a small upload page served by TimeBooks on
+  this PC's local-network address, a random port and a one-time code in the path (`http://<ip>:<port>/<code>/`),
+  shown as a QR code (`qrcode` package) and as text. It answers only at that code, accepts pictures and PDFs only
+  (safe, unique file names; 40 MB per send), and stops when the window closes. Each photo is filed with a Draft
+  expense the same way as the scanner folder. Windows Firewall asks once (allow private networks); when blocked, a
+  phone photo-sync folder used as the scanner folder is the fallback.

@@ -223,9 +223,9 @@ existing expense (same amount, close date); unmatched money out can become Draft
 #### B. Phone photos over Wi-Fi
 **Owner sees:** **Scan Receipt → From my phone**: a QR code and a short web address; the phone (same Wi-Fi) opens it,
 takes photos of receipts, and they arrive as Drafts. No app to install and nothing goes over the internet.
-- [ ] Small upload page served by TimeBooks only while that window is open, on the local network only, with a
+- [x] Small upload page served by TimeBooks only while that window is open, on the local network only, with a
       one-time code in the address; pictures go to the scanner-folder flow
-- [ ] Windows Firewall will ask the first time; explain it in the window. If a PC blocks it, the scanner folder
+- [x] Windows Firewall will ask the first time; explain it in the window. If a PC blocks it, the scanner folder
       (e.g. a phone's OneDrive/Google Photos sync folder) is the fallback
 
 **Part 3 is done when** a real bank statement (CSV and PDF) matches against the expenses and a phone photo arrives

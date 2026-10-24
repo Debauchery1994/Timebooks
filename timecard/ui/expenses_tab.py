@@ -2,6 +2,7 @@
 scanned, picked up from the scanner's folder or imported, read automatically, and approved on a review screen."""
 from __future__ import annotations
 
+import queue
 import re
 import tkinter as tk
 from datetime import date, datetime
@@ -10,7 +11,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
-from .. import expenses, receipts_ocr, scanning
+from .. import expenses, phone_upload, receipts_ocr, scanning
 from ..models import Expense, Trip
 from .common import MONTH_NAMES, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
 from .bank_dialog import BankImportDialog
@@ -384,6 +385,69 @@ class RecurringDialog(ModalDialog):
         return True
 
 
+class PhoneUploadDialog(tk.Toplevel):
+    """Shows the QR code / address for the phone and adds each photo as a Draft as it arrives; the upload page stops
+    when this window closes."""
+
+    def __init__(self, master, on_receipt):
+        super().__init__(master)
+        self.title("Receipts from your phone")
+        self.transient(master.winfo_toplevel())
+        self.resizable(False, False)
+        self.on_receipt = on_receipt
+        self.arrived: queue.Queue = queue.Queue()
+        self.count = 0
+        f = ttk.Frame(self, padding=18)
+        f.pack(fill="both", expand=True)
+        try:
+            self.server = phone_upload.PhoneUploadServer(scanning.scans_folder() / "Phone", self.arrived.put).start()
+        except OSError as exc:
+            ttk.Label(f, text=f"The phone page couldn't be started ({exc}). Use the scanner folder instead (for "
+                      "example the folder your phone's photos sync to).", wraplength=420).pack()
+            ttk.Button(f, text="Close", command=self.destroy).pack(pady=(10, 0))
+            self.server = None
+            return
+        img = phone_upload.qr_image(self.server.url)
+        if img is not None:
+            from PIL import ImageTk
+            self._qr = ImageTk.PhotoImage(img)
+            tk.Label(f, image=self._qr, bd=0).pack()
+        ttk.Label(f, text="On your phone (same Wi-Fi), scan this code with the camera, or open:",
+                  wraplength=420).pack(pady=(10, 2))
+        e = ttk.Entry(f, width=46, justify="center")
+        e.insert(0, self.server.url)
+        e.configure(state="readonly")
+        e.pack()
+        ttk.Label(f, text="Take a picture of each receipt and tap Send; each one arrives here as a draft. The page "
+                  "only works while this window is open, and only on this network. If Windows asks about the "
+                  "firewall, allow private networks.", style="Muted.TLabel", wraplength=420).pack(pady=(10, 4))
+        self.v_count = ttk.Label(f, text="Waiting for photos…", style="Hours.TLabel")
+        self.v_count.pack(pady=(4, 8))
+        ttk.Button(f, text="Done", style="Accent.TButton", command=self.close).pack()
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after(500, self._poll)
+
+    def _poll(self) -> None:
+        while not self.arrived.empty():
+            self.on_receipt(self.arrived.get())
+            self.count += 1
+            self.v_count.configure(text=f"{self.count} receipt{'s' if self.count != 1 else ''} received as drafts")
+        if self.winfo_exists():
+            self.after(500, self._poll)
+
+    def close(self) -> None:
+        if self.server is not None:
+            self.server.stop()
+            self.server = None
+            while not self.arrived.empty():   # anything that arrived in the last moment
+                self.on_receipt(self.arrived.get())
+        self.destroy()
+
+    def show(self) -> None:
+        self.grab_set()
+        self.wait_window(self)
+
+
 class ExpensesTab(PinLockable, ttk.Frame):
     pin_key = "expenses"
     pin_what = "Expense records"
@@ -425,6 +489,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
         menu = tk.Menu(scan, tearoff=0)
         menu.add_command(label="From the scanner…", command=self.scan_from_scanner)
         menu.add_command(label="From a photo or PDF…", command=self.scan_from_file)
+        menu.add_command(label="From my phone (Wi-Fi)…", command=self.scan_from_phone)
         menu.add_separator()
         menu.add_command(label="Check Scanner Folder", command=self.check_scanner_folder)
         menu.add_command(label="Choose Scanner Folder…", command=self.choose_scanner_folder)
@@ -623,6 +688,25 @@ class ExpensesTab(PinLockable, ttk.Frame):
             return
         e, fields = self._new_from_receipt(path)
         self._review(e, path, new=True, source=str(path), fields=fields)
+
+    def scan_from_phone(self) -> None:
+        if not self._scan_ready():
+            return
+        if self.book.path is None and not self.app.save_as():
+            return
+        PhoneUploadDialog(self, self._phone_receipt).show()
+
+    def _phone_receipt(self, path: Path) -> None:
+        """A photo arrived from the phone: file it with a Draft expense, read the same way as the scanner folder."""
+        e, _fields = self._new_from_receipt(path)
+        try:
+            e.receipt_file = expenses.file_receipt(path, e, self.book.path)
+        except (OSError, ValueError) as exc:
+            log.warning("Phone photo %s skipped: %s", path, exc)
+            return
+        self.book.expenses.append(e)
+        self.app.mark_dirty()
+        self.refresh()
 
     def choose_scanner_folder(self) -> bool:
         d = filedialog.askdirectory(parent=self, title="Folder your scanner saves receipts into",
