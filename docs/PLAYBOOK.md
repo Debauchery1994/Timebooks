@@ -64,8 +64,8 @@ Phases 4 and 5 are independent and can swap order. Phase 3 needs Phase 2.
 
 - [x] Pre-release review (timebooks-reviewer): 2 high, 3 medium, 6 low findings; 9 fixed, #6 handled in release notes,
       #11 (Year Log vs Pay & Checks for days outside the year) existed before and is parked
-- [ ] Push the local commits
-- [ ] Build `TimeCardPro-Setup.exe` and publish release `1.1.2`
+- [x] Push the local commits (2026-10-24)
+- [ ] Build `TimeCardPro-Setup.exe` (built 2026-10-24) and publish release `1.1.2`
 - [x] Review of the salary hours / time off commit (`c13bf40`, landed after the review): no pay bugs; DESIGN.md CSV
       columns updated. Older copies drop the new SalaryHours/HoursType columns, so typed-hours and time-off days are
       lost if 1.1.1 saves the workbook (added to the release notes)
@@ -92,6 +92,16 @@ Nothing is deleted; turning it back on brings everything back.
 
 All-salary business: **Time cards off** → Pay & Checks pays salaried people every period with no hours needed (that
 part already works), and the memo/stub leaves out hours.
+
+**Security: don't advertise where the workbook is.** The `.xlsx` itself isn't protected by the PIN, so anyone who
+can find it can open it in GridCraft/Excel and read pay rates.
+- [x] Top banner shows the workbook's file name, not its full path (and so do the "Opened…" / "Created…" messages)
+- [ ] File → Recent Files shows full paths: show names only (add the folder name only when two names match)
+- [ ] Decide which of these go behind the PIN: Open in GridCraft, Open Output Folder, Recent Files, File → Open
+      (whose dialog starts in the workbook's folder)
+- [ ] Say plainly in Help / Company Settings that the PIN protects the app, not the file; the file is protected by
+      the Windows sign-in (and BitLocker on a laptop). Locking the file itself would break "readable in GridCraft/Excel",
+      so it stays a parking-lot idea.
 
 **Engineering (do this first, before adding tabs):**
 - [ ] Split `timecard/app.py` (≈4,000 lines) into `timecard/ui/` modules: `common.py` (theme, widgets, dialogs),
@@ -273,6 +283,9 @@ and totals, same as the other tabs.
 
 - Year Log / monthly summary: include days just outside the year that fall in the first/last pay period (review #11)
 - Workbook "minimum app version" marker so older copies refuse to save newer workbooks (review #6; Phase 1 schema work)
+
+- Optional password-protected workbook (encrypted `.xlsx`), for owners who would trade "opens in GridCraft" for a
+  locked file
 
 - Bank statement CSV import and matching against expenses/sales
 - Mileage log

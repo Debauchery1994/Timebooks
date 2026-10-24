@@ -3882,7 +3882,8 @@ class App(tk.Tk):
         star = "*" if self.book.dirty else ""
         self.title(f"{star}{name} - {APP_NAME}")
         self.lbl_company.configure(text=self.book.company.company_name or APP_NAME)
-        self.lbl_path.configure(text=str(self.book.path) if self.book.path else "Not saved yet")
+        # File name only: the full path would show visitors at the desk where the (unlocked) workbook lives.
+        self.lbl_path.configure(text=self.book.path.name if self.book.path else "Not saved yet")
         self.lbl_year.configure(text=str(self.book.company.year))
         self.v_dirty.set("Unsaved changes" if self.book.dirty else "All changes saved")
 
@@ -4024,7 +4025,7 @@ class App(tk.Tk):
             messagebox.showerror(APP_NAME, f"Could not open the workbook:\n{path}\n\n{exc}", parent=self)
             return False
         self.set_book(book)
-        self.status(f"Opened {path}")
+        self.status(f"Opened {Path(path).name}")
         log.info("Opened %s", path)
         return True
 
@@ -4056,7 +4057,7 @@ class App(tk.Tk):
             messagebox.showerror(APP_NAME, f"Could not save the new workbook:\n{exc}", parent=self)
             return
         self.set_book(book)
-        self.status(f"Created {path}")
+        self.status(f"Created {Path(path).name}")
         if cleared:
             messagebox.showinfo("New Year Workbook", f"The pay period changed to {book.company.pay_period}, so "
                                 "these salaries per pay period were cleared and need to be set again on the "
