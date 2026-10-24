@@ -40,7 +40,14 @@ Keys (match `models.Company` field names exactly, snake_case):
 `company_name, address1, address2, phone, bank_name, bank_address, routing_number, account_number,
 year, next_check_number, pay_period, week_start, default_lunch_minutes, overtime_threshold_weekly,
 overtime_multiplier, federal_withholding_pct, state_withholding_pct, social_security_pct,
-medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signature_line_text`
+medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signature_line_text` (plus every later
+`models.Company` field, e.g. `pay_hold_back`, the branding keys and the time off keys `pto_hours` … `sick_paid`).
+
+Then two rows that aren't settings: `schema_version` (`storage.SCHEMA_VERSION`: 1 = 1.1.0–1.1.1, no marker;
+2 = 1.1.2; 3 = 1.2.0) and `app_version` (the version that saved the file). Bump `SCHEMA_VERSION` whenever a sheet or
+column is added. A workbook whose `schema_version` is higher than the app's opens with a warning and is **never
+saved over** (no autosave; File > Save refuses; Save As to a separate copy works), so an older copy can't drop columns
+it doesn't know. Copies older than 1.2.0 don't read the marker, so they still have to be updated by hand.
 
 ### `Employees`
 `EmployeeID | FirstName | LastName | Address1 | Address2 | PayType | PayRate | Active | Notes | SalaryBasis`

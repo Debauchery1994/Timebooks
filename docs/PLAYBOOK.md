@@ -115,9 +115,10 @@ can find it can open it in GridCraft/Excel and read pay rates.
 - [ ] Split `timecard/app.py` (≈4,000 lines) into `timecard/ui/` modules: `common.py` (theme, widgets, dialogs),
       `timecard_tab.py`, `employees_tab.py`, `yearlog_tab.py`, `payroll_tab.py`, `company_tab.py`, `app.py`. No behaviour
       change; the existing tests and screen smoke tests must pass unchanged.
-- [ ] Workbook **schema version** (a `schema_version` row on the Company sheet) and a small migration step on load,
-      so new sheets/columns are added cleanly and an older app warns before saving a newer workbook
-      (this prevents the "1.1.1 drops the SalaryBasis column" problem from happening again).
+- [x] Workbook **schema version** (`schema_version` and `app_version` rows on the Company sheet). A newer app's
+      workbook opens with a warning and is never saved over (no autosave, Save refuses, Save As a copy works).
+      Older workbooks upgrade on save: the writers always write every current column, so no separate migration
+      step was needed. Protects from 1.2.0 on; 1.1.x copies don't read the marker.
 - [ ] `Company.features` setting and a tab registry the notebook is built from.
 - [ ] Setup: an optional "What does your business need?" step that sets the switches.
 
@@ -290,7 +291,6 @@ and totals, same as the other tabs.
 ## 7. Parking lot (ideas, not scheduled)
 
 - Year Log / monthly summary: include days just outside the year that fall in the first/last pay period (review #11)
-- Workbook "minimum app version" marker so older copies refuse to save newer workbooks (review #6; Phase 1 schema work)
 
 - Optional password-protected workbook (encrypted `.xlsx`), for owners who would trade "opens in GridCraft" for a
   locked file

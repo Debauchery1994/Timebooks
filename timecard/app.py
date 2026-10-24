@@ -3868,7 +3868,8 @@ class App(tk.Tk):
         """Quietly save the open workbook; a locked file only warns in the status bar and retries."""
         self._autosave_job = None
         if (self.book is None or self.book.path is None or not self.book.dirty
-                or not self.settings.data.get("autosave", True) or self._autosave_paused):
+                or not self.settings.data.get("autosave", True) or self._autosave_paused
+                or self.book.from_newer_app):
             return
         if self.book.changed_on_disk():
             # GridCraft / Excel / another PC changed the file: never overwrite that without asking
@@ -4070,6 +4071,12 @@ class App(tk.Tk):
         self.set_book(book)
         self.status(f"Opened {Path(path).name}")
         log.info("Opened %s", path)
+        if book.from_newer_app:
+            log.warning("Opened a workbook from a newer version (schema %s, saved by %s)",
+                        book.schema_version, book.saved_by or "?")
+            self.status("Saved by a newer version of TimeCard Pro: changes here can't be saved over it.", error=True)
+            messagebox.showwarning(APP_NAME, book.newer_message() + "\n\nUntil then, anything you change here can "
+                                   "only be kept with File > Save As (a separate copy).", parent=self)
         return True
 
     def new_year_workbook(self) -> None:
@@ -4128,6 +4135,10 @@ class App(tk.Tk):
         self.commit_pending()
         if self.book.path is None:
             return self.save_as()
+        if self.book.from_newer_app:
+            messagebox.showwarning(APP_NAME, self.book.newer_message() + "\n\nTo keep your changes, use File > "
+                                   "Save As to save a separate copy.", parent=self)
+            return False
         if self.book.changed_on_disk() and not messagebox.askyesno(
                 APP_NAME, f"{self.book.path.name} was changed outside TimeCard Pro (for example in GridCraft) "
                 "since it was opened here.\n\nSaving replaces those changes with what is shown in TimeCard Pro. "

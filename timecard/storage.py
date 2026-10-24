@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
-from . import branding, calc
+from . import __version__, branding, calc
 from .models import Company, Employee, PayrollRecord, TimeEntry
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
@@ -47,6 +47,15 @@ PAYROLL_FIELDS = ["check_number", "check_date", "period_start", "period_end", "e
 PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "state_tax",
                  "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+# Workbook layout version, written to the Company sheet as `schema_version` (with the `app_version` that saved it).
+# Bump it whenever a sheet or column is added, so an older copy of the app that opens a newer workbook won't save it
+# and drop what it doesn't know about.
+#   1 = 1.1.0-1.1.1 (no marker)
+#   2 = 1.1.2: Employees SalaryBasis, TimeLog SalaryHours / HoursType, pay_hold_back
+#   3 = 1.2.0: Payroll LeaveHours / LeavePay, Company time off settings, the Closed day type
+SCHEMA_VERSION = 3
+META_KEYS = ("schema_version", "app_version")
 
 # Hours WORKED (column I): 0 for PTO/Holiday/Sick (L); the typed salary hours (K) when set; else the punches.
 HOURS_FORMULA = ('=IF(AND(L{r}<>"",L{r}<>"Worked"),0,IF(K{r}<>"",MAX(0,ROUND(K{r},2)),'
@@ -202,6 +211,8 @@ class TimecardBook:
         self.logo_png = b""
         self.dirty = False
         self.disk_stamp: tuple[int, int] | None = None   # (mtime_ns, size) of the file when loaded/saved
+        self.schema_version = SCHEMA_VERSION   # of the file as loaded (1 for workbooks without the marker)
+        self.saved_by = ""                     # app version that last saved the file, when it recorded one
 
     @staticmethod
     def _stamp(p: Path) -> tuple[int, int] | None:
@@ -218,6 +229,18 @@ class TimecardBook:
             return False
         now = self._stamp(Path(self.path))
         return now is not None and now != self.disk_stamp
+
+    @property
+    def from_newer_app(self) -> bool:
+        """The file was saved by a newer TimeCard Pro whose sheets/columns this copy doesn't know, so saving over it
+        would lose them. save() refuses to write it back to the same file."""
+        return self.schema_version > SCHEMA_VERSION
+
+    def newer_message(self) -> str:
+        by = f" ({self.saved_by})" if self.saved_by else ""
+        return (f"{Path(self.path).name if self.path else 'This workbook'} was saved by a newer version of TimeCard "
+                f"Pro{by}. This copy can show it but can't save over it without losing information. Update this copy "
+                "with Help > Check for Updates.")
 
     @classmethod
     def new(cls, company: Company) -> "TimecardBook":
@@ -252,6 +275,11 @@ class TimecardBook:
         try:
             if (ws := sheet("company")) is not None:
                 book.company = cls._read_company(ws)
+                meta = cls._read_meta(ws)
+                book.schema_version = max(_to_int(meta.get("schema_version"), 1), 1)
+                book.saved_by = _text(meta.get("app_version"))
+            else:
+                book.schema_version = 1
             if (ws := sheet("employees")) is not None:
                 for r in _rows(ws):
                     emp = cls._read_employee(r)
@@ -274,6 +302,12 @@ class TimecardBook:
         book.dirty = False
         book.disk_stamp = stamp
         return book
+
+    @staticmethod
+    def _read_meta(ws: Worksheet) -> dict[str, Any]:
+        """The schema_version / app_version rows of the Company sheet."""
+        pairs = ((tuple(row) + (None, None))[:2] for row in ws.iter_rows(min_row=2, max_col=2, values_only=True))
+        return {_text(k): v for k, v in pairs if _text(k) in META_KEYS}
 
     @staticmethod
     def _read_company(ws: Worksheet) -> Company:
@@ -372,6 +406,8 @@ class TimecardBook:
         if target is None:
             raise WorkbookError("No file name chosen for this workbook.")
         target = target.resolve()
+        if self.from_newer_app and self.path is not None and target == Path(self.path).resolve():
+            raise WorkbookError(self.newer_message())
         wb = self._build_workbook()
         tmp_name: str | None = None
         try:
@@ -394,6 +430,7 @@ class TimecardBook:
         self.path = target
         self.dirty = False
         self.disk_stamp = self._stamp(target)
+        self.schema_version, self.saved_by = SCHEMA_VERSION, __version__
         return target
 
     # ------------------------------------------------------------ branding
@@ -442,6 +479,8 @@ class TimecardBook:
         _write_header(ws, ["Setting", "Value"], [28, 44])
         for f in dataclasses.fields(Company):
             ws.append([f.name, getattr(self.company, f.name)])
+        ws.append(["schema_version", SCHEMA_VERSION])
+        ws.append(["app_version", __version__])
         # Keep bank numbers as text so leading zeros survive.
         for row in ws.iter_rows(min_row=2):
             if row[0].value in ("routing_number", "account_number"):
