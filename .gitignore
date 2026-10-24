@@ -9,3 +9,5 @@ dist/
 ~$*.xlsx
 # Claude Code agent worktrees (separate checkouts)
 .claude/worktrees/
+# installers kept for publishing (built files, not source)
+release-builds/

@@ -53,7 +53,7 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 # and drop what it doesn't know about.
 #   1 = 1.1.0-1.1.1 (no marker)
 #   2 = 1.1.2: Employees SalaryBasis, TimeLog SalaryHours / HoursType, pay_hold_back
-#   3 = 1.2.0: Payroll LeaveHours / LeavePay, Company time off settings, the Closed day type
+#   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
 SCHEMA_VERSION = 3
 META_KEYS = ("schema_version", "app_version")
 

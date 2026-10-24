@@ -194,6 +194,9 @@ class TimeCardTab(PinLockable, ttk.Frame):
         self.focus_date(d)
 
     def focus_date(self, d: date) -> None:
+        if self.locked:   # never put the keyboard in a tab that is behind the PIN screen
+            self.overlay.focus_pin()
+            return
         for i, r in enumerate(self.rows):
             if r.d == d:
                 self.current_row = i

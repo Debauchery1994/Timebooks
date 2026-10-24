@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro from a timecard and payroll-check app 
 desktop app. Each phase ships as its own release. Check items off as they land, and add new ideas to the
 **Parking lot** at the bottom rather than letting them grow the current phase.
 
-_Last updated: 2026-10-24 · current version: 1.1.2 (not yet released)_
+_Last updated: 2026-10-24 · current version: 1.2.0 (built, not yet released; 1.1.2 built, not yet released)_
 
 ---
 
@@ -125,6 +125,11 @@ can find it can open it in GridCraft/Excel and read pay rates.
       tab registry (`App.tab_specs`) the notebook is built from. Expenses / Vendors / Sales switches get added with
       those features. With time cards off, Pay & Checks pays salaried people and says why hourly people are skipped.
 - [x] Setup: "What does your business need?" (two boxes, both on); silent install `--no-timecards` / `--no-payroll`.
+
+- [x] Pre-release review of everything since the 1.1.2 build: one fix (jumping from the Year Log to a locked Time
+      Card put the keyboard behind the PIN screen); no pay or data findings
+- [x] Version 1.2.0; installer built (the 1.1.2 installer is kept in `release-builds/1.1.2/`)
+- [ ] Push, publish release `v1.2.0`, then Check for Updates from an installed older copy
 
 **Done when** an all-salary business can hide Time Card and Year Log and still run payroll, and the app reopens the
 same way.
