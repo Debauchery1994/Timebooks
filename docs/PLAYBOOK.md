@@ -66,8 +66,12 @@ Phases 4 and 5 are independent and can swap order. Phase 3 needs Phase 2.
       #11 (Year Log vs Pay & Checks for days outside the year) existed before and is parked
 - [ ] Push the local commits
 - [ ] Build `TimeCardPro-Setup.exe` and publish release `1.1.2`
+- [x] Review of the salary hours / time off commit (`c13bf40`, landed after the review): no pay bugs; DESIGN.md CSV
+      columns updated. Older copies drop the new SalaryHours/HoursType columns, so typed-hours and time-off days are
+      lost if 1.1.1 saves the workbook (added to the release notes)
 - [ ] Release notes: "Update every copy (including USB/portable copies) to 1.1.2 before using a salary per pay
-      period — older copies read it as a yearly salary."
+      period or entering salary hours / time off — older copies read a per-period salary as yearly, and drop typed
+      hours and PTO / Holiday / Sick days when they save."
 - [ ] From an installed 1.1.1: Help → Check for Updates → install → confirm the workbook, PIN and settings survived
 - [ ] When a printer is available: alignment test, then one real voucher check
 

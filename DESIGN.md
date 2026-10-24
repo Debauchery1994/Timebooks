@@ -277,7 +277,8 @@ stored (collect W-9s).
 - Filters: employee (current team members; former ones show under All) and month. With a month selected, a pay period
   that crosses the month edge only counts that month's days and is labelled "(partial)", so totals match the monthly
   summary. Column headings sort (click again to reverse).
-- Export CSV: PeriodStart, PeriodEnd, Employee, HoursWorked, LunchDeductMin, Notes, EmployeeID, plus a total row.
+- Export CSV: PeriodStart, PeriodEnd, Employee, HoursWorked, TimeOffHours, TimeOff, LunchDeductMin, Notes, EmployeeID,
+  plus a total row.
 
 ## Salary hours and time off (Time Card)
 - `TimeEntry.salary_hours` (Decimal, optional) and `TimeEntry.hours_type` (`Worked` default | `PTO` | `Holiday` | `Sick`),
