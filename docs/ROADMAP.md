@@ -245,6 +245,10 @@ and alignment as payroll checks.
       on vendor checks; voucher stub shows the bills paid
 - [ ] `Vendors` sheet: `VendorID | Name | Address1 | Address2 | Phone | Email | DefaultCategory | Is1099 | Notes | Active`
 - [ ] Vendor checks: a `Type` column on a shared `Checks` sheet or a separate sheet (decision 7)
+- [ ] **Unknown vendors** (requested 2026-10-24): a section of the Vendors tab listing every expense with no vendor
+      (receipts in `Receipts\<year>\Unknown vendor`, scans the reader couldn't name, bank lines). Pick an existing
+      vendor or add a new one for one or several at once: the expenses get that vendor (and its default category if
+      they have none) and their receipts move into `Receipts\<year>\<vendor>` (uses `expenses.refile_receipt`)
 - [ ] Vendor 1099 totals in the annual export (threshold from Company Settings; confirm each year with the tax pro)
 - [ ] No vendor tax IDs stored (same rule as contractors: collect W-9s on paper)
 - [ ] **Positive-pay file** for the bank (check number, date, amount, payee) from the Check Register, in the format
