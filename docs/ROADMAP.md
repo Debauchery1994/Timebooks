@@ -1,6 +1,6 @@
-# TimeBooks — Roadmap
+# Timebooks — Roadmap
 
-The working plan for turning TimeCard Pro into **TimeBooks**, a small-business bookkeeping desktop app. Each release
+The working plan for turning TimeCard Pro into **Timebooks**, a small-business bookkeeping desktop app. Each release
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
@@ -14,8 +14,6 @@ _Last updated: 2026-10-24 · current version: 1.2.0 (released 2026-10-24) · nex
 handwrite checks, annual statements for the tax professional, PIN on Employees, portable USB copy, Google Drive style
 backups, themes and text size, company branding, Check for Updates from GitHub Releases, and a workbook created by
 Setup in `Documents\TimeCard Pro`.
-
-**1.1.2:** skipped (its changes shipped in 1.2.0).
 
 **1.2.0 (released 2026-10-24):**
 - Salary per year or per pay period; Pay timing (hold one pay period back)
@@ -53,7 +51,7 @@ Guiding rules (these come from the decisions already made in the app):
 | Release | What the owner gets | Size |
 |---|---|---|
 | 1.2.0 | ✅ Released: time off, tab locks, features on/off, code split | — |
-| **1.3.0** | **TimeBooks**: the new name, plus **Expenses & Receipts** entered by hand and **scanned** (scanner, scanner folder, photo or PDF → vendor, date, total, items filled in) | XL |
+| **1.3.0** | **Timebooks**: the new name, plus **Expenses & Receipts** entered by hand and **scanned** (scanner, scanner folder, photo or PDF → vendor, date, total, items filled in) | XL |
 | 1.4.0 | **Vendors & Pay Bills**: print checks to vendors on the same checkbook | M |
 | 1.5.0 | **Sales** tab: record money coming in | M |
 | 1.6.0 | **Reports**: Profit & Loss, spending by category, tax-pro export pack | M |
@@ -63,29 +61,36 @@ Guiding rules (these come from the decisions already made in the app):
 
 ---
 
-## 1.3.0 — TimeBooks: the new name, Expenses and receipt scanning
+## 1.3.0 — Timebooks: the new name, Expenses and receipt scanning
 
 One release with three parts, built in this order so each part lands on top of the last: **A** the rename, **B**
 expenses by hand, **C** scanning. Each part is committed and tested on its own; only the release waits for all three.
 
-### A. Rename to TimeBooks (first, before any new tabs)
+### A. Rename to Timebooks (first, before any new tabs)
 
-**Owner sees:** the app, Setup, shortcuts, window title, printouts and Help → About say **TimeBooks** (capital B,
-decided 2026-10-24). After reinstalling, their workbook, PIN and recent files are still there.
+**Owner sees:** the app, Setup, shortcuts, window title, printouts and Help → About say **Timebooks**. Their
+workbooks, PIN, settings, backups and recent files are all still there after the update.
 
-_Decided 2026-10-24: no upgrade path from TimeCard Pro._ 1.2.0 was only ever installed on the owner's PC; that
-release is deleted from GitHub, the owner uninstalls TimeCard Pro (Settings → Apps) and installs 1.3.0, which becomes
-the only download. So there is one installer name and no code that moves an old install.
-
-- [x] Names: `APP_NAME` "TimeBooks" (app and installer), `TimeBooks.exe`, `TimeBooks-Setup.exe` (the Check for
-      Updates asset), `Programs\TimeBooks`, `%APPDATA%\TimeBooks`, `TIMEBOOKS_SETTINGS_DIR`, shortcuts, uninstall entry,
-      window class, PDF author, "TimeBooks Output", "TimeBooks Backups", "TimeBooks Portable", every message
-- [x] What carries over on the reinstall: `%APPDATA%\TimeCardPro` (PIN, recent files, last workbook) is copied to
-      `%APPDATA%\TimeBooks` once, so Setup keeps the PIN and finds the workbook; folders the owner already has keep
-      being used (Documents\TimeCard Pro, TimeCard Pro Backups, TimeCard Pro Output). Nothing is moved or deleted
-- [x] Python package stays `timecard` (internal only; renaming it would touch every file for no visible gain)
-- [x] Tests never touch the real `%APPDATA%` (a stray test copy of the owner's settings was found and removed)
-- [ ] On the owner's PC: uninstall TimeCard Pro, install 1.3.0; workbook opens, PIN works, recent files listed
+- [ ] Names: `APP_NAME` (app and installer), the `.exe` (`Timebooks.exe`), Start menu / desktop shortcuts, the
+      uninstall entry (registry key and publisher), window title, About, PDF titles and footers, the output folder
+      ("Timebooks Output"), the installer's own text
+- [ ] **Moving the owner's things** (once, on first start of 1.3.0, with a log line for each step, never deleting
+      the old copy until the new one is in place):
+      - settings and PIN: `%APPDATA%\TimeCardPro` → `%APPDATA%\Timebooks`
+      - program: `%LOCALAPPDATA%\Programs\TimeCardPro` → `...\Programs\Timebooks` (shortcuts and uninstall entry
+        repointed; the old folder removed after the new one runs)
+      - portable copies: `TimeCard Pro Portable` keeps its folder name (it may be on a labelled USB drive); only the
+        program file inside is renamed
+      - workbooks are **not moved or renamed** (`Documents\TimeCard Pro` stays where it is; new workbooks go to
+        `Documents\Timebooks`). Recent files and the last workbook keep pointing at the existing files
+- [ ] **Updates from 1.2.0 must still find 1.3.0:** 1.2.0 copies look for a release file named exactly
+      `TimeCardPro-Setup.exe`. The 1.3.0 release attaches the installer under **both** names
+      (`Timebooks-Setup.exe` and `TimeCardPro-Setup.exe`); 1.3.0 looks for `Timebooks-Setup.exe` first and falls back
+      to the old name. Keep attaching the old name until no 1.2.0 copies are left.
+- [ ] `--update` from a 1.2.0 copy installs into the new folder and starts `Timebooks.exe`
+- [ ] Python package stays `timecard` (internal only; renaming it would touch every file for no visible gain)
+- [ ] Test: update a 1.2.0 install and a 1.2.0 portable copy to 1.3.0; workbook, PIN, settings, recent files, backups
+      and shortcuts all survive; uninstall removes everything
 
 ### B. Expenses & Receipts, entered by hand
 
@@ -93,11 +98,9 @@ the only download. So there is one installer name and no code that moves an old 
 receipt (image or PDF), view it, filter by month/category/vendor, and sort, the same way as the Year Log. Totals by
 category at the bottom.
 
-- [x] Company Settings → Features gets **Expenses** (off until turned on); Locked by PIN gets an
+- [ ] Company Settings → Features gets **Expenses & receipts** (off until turned on); Locked by PIN gets an
       **Expenses** box (off by default)
-- [x] Schema version 4 for the new sheets
-- [x] Expenses tab: filters, sorting, add/edit/delete, view receipt, totals by category; vendor suggests its last
-      category
+- [ ] Schema version 4 for the new sheets
 
 **Data (new sheets):**
 
@@ -113,9 +116,8 @@ Advertising, Car & truck, Commissions & fees, Contract labor, Insurance, Legal &
 
 **Receipt files** live in a `Receipts\<year>\` folder next to the workbook (`Data\Receipts` on a portable copy), not
 inside the `.xlsx`. Images would make the workbook huge and slow to save.
-- [x] Backups copy the receipts folder too (only new files each time)
-- [x] Receipts are filed by the app (named by date, vendor, amount; never overwritten); a "find missing receipts"
-      tool can come later if folders get separated
+- [ ] Backups copy the receipts folder too (only new files each time)
+- [ ] Moving or renaming a receipt is done through the app so links don't break
 
 ### C. Scan a receipt and fill it in automatically
 
@@ -162,7 +164,7 @@ that's wrong, then Approve.
       fails mainly on faded thermal paper or phone photos; if it's ever added it needs the owner's own API key, a clear
       one-time warning and a per-receipt indicator.
 
-**1.3.0 is done when** the owner's reinstall as TimeBooks keeps their workbook and PIN; a month of expenses can be entered
+**1.3.0 is done when** a 1.2.0 copy updates to Timebooks with everything intact; a month of expenses can be entered
 with receipts attached and the category totals match a hand count; and 20 real receipts from the business are
 scanned, at least 80% get the correct total and date without edits, and every one can be fixed on the review screen.
 
@@ -236,8 +238,7 @@ and totals, same as the other tabs.
 
 | # | Decision | When | Answer / recommendation |
 |---|---|---|---|
-| 1 | Rename to TimeBooks now or at 2.0? | — | **Decided 2026-10-24: in 1.3.0**, first part of that release, spelled TimeBooks |
-| 13 | Upgrade path from TimeCard Pro 1.2.0? | — | **Decided 2026-10-24: none.** 1.2.0 release deleted; the owner reinstalls; 1.3.0 is the only download |
+| 1 | Rename to Timebooks now or at 2.0? | — | **Decided 2026-10-24: in 1.3.0**, first part of that release |
 | 2 | Hide a turned-off feature completely, or show it greyed out? | — | **Done in 1.2.0: hidden completely** |
 | 3 | Which scanner does the business have (brand/model, USB or network)? | Before 1.3.0 part C | Needed to test WIA vs. folder |
 | 4 | Allow optional online AI receipt reading? | Mid 1.3.0 part C | **Decided 2026-10-24: no, offline only for now**; revisit after the 20-real-receipt test |
@@ -254,8 +255,8 @@ and totals, same as the other tabs.
 
 - **Older app saves a newer workbook and drops data.** The schema version (1.2.0) stops copies from 1.2.0 on; keep
   every copy updated via Check for Updates.
-- **The rename loses the owner's setup.** Settings and PIN are copied from the TimeCard Pro folder on first start,
-  and existing workbook/backup/output folders keep being used. Workbooks never move.
+- **The rename strands someone.** 1.2.0 copies must still find the update (installer attached under the old name too),
+  and settings, PIN and program folder move once with the old copy kept until the new one runs. Workbooks don't move.
 - **OCR misreads totals.** Review screen and highlighted low-confidence fields; never auto-approve.
 - **Receipt folder separated from the workbook** (copied to another PC without it). Paths stored relative to the
   workbook; backups and portable copies include the folder; a "find missing receipts" tool.
@@ -269,10 +270,11 @@ and totals, same as the other tabs.
 - A day that is part worked, part time off (one Type per day today)
 - Optional password-protected workbook (encrypted `.xlsx`), for owners who would trade "opens in GridCraft" for a
   locked file
-- Bank statement CSV import and matching against expenses/sales
-- Mileage log
-- Recurring expenses (rent, subscriptions)
-- Simple invoices with a printable PDF
-- Multiple businesses in one app (one workbook each, quick switcher)
+- Bank statement CSV import and matching against expenses/sales [lets add this to the recipt scanning portion to build a csv from bank staement if one can't be provided]
+- Mileage log [add this into reciepts]
+- Owners who don't take a proper paycheck(sole proporietorships as a pay group) so gas and milage can be logged on there account
+- Recurring expenses (rent, subscriptions) [add this into the expense tab]
+- Simple invoices with a printable PDF [add this into the sales update]
+- Multiple businesses in one app (one workbook each, quick switcher) [make this part of 2.0.0]
 - Positive-pay file export for the bank
-- Mobile photo upload over the local network
+- Mobile photo upload over the local network [add this into scanner ability if possible if not add to road map]
