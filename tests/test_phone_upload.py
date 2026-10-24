@@ -39,5 +39,46 @@ class PhoneUploadTests(unittest.TestCase):
             self.assertTrue(phone_upload.qr_image(srv.url) is None or phone_upload.qr_image(srv.url).size[0] > 50)
 
 
+class PhoneUploadLimitTests(unittest.TestCase):
+    def test_guessing_the_code_shuts_the_page_and_the_version_is_hidden(self) -> None:
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            srv = phone_upload.PhoneUploadServer(d, lambda p: None, host="127.0.0.1").start()
+            try:
+                with urllib.request.urlopen(srv.url, timeout=5) as r:
+                    self.assertEqual(r.headers["Server"].strip(), "TimeBooks")
+                for _ in range(phone_upload.MAX_BAD_REQUESTS):
+                    try:
+                        urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/guess/", timeout=5).close()
+                    except urllib.error.HTTPError as exc:
+                        exc.close()
+                for _ in range(50):
+                    if srv.stopped:
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(srv.stopped)
+                self.assertIn("wrong addresses", srv.stopped_reason)
+            finally:
+                srv.stop()
+
+    def test_file_limit_per_window(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            got: list[Path] = []
+            srv = phone_upload.PhoneUploadServer(d, got.append, host="127.0.0.1").start()
+            srv.saved_count = phone_upload.MAX_FILES - 1
+            try:
+                body, ctype = _multipart([("a.jpg", b"1"), ("b.jpg", b"2")])
+                req = urllib.request.Request(srv.url + "upload", data=body, headers={"Content-Type": ctype})
+                urllib.request.urlopen(req, timeout=5).close()
+                self.assertEqual(len(got), 1)   # only up to the limit
+                req = urllib.request.Request(srv.url + "upload", data=body, headers={"Content-Type": ctype})
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urllib.request.urlopen(req, timeout=5)
+                self.assertEqual(ctx.exception.code, 429)
+                ctx.exception.close()
+            finally:
+                srv.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,8 @@ from typing import Callable
 from . import expenses
 
 MAX_UPLOAD = 40 * 1024 * 1024   # bytes per send (a few phone photos)
+MAX_FILES = 300                  # per window: plenty for a shoebox of receipts, a limit for anything misbehaving
+MAX_BAD_REQUESTS = 30            # wrong addresses before the page shuts itself off (no guessing the code)
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>TimeBooks receipts</title><style>body{font-family:system-ui,sans-serif;margin:24px;font-size:18px}
@@ -76,9 +78,16 @@ class PhoneUploadServer:
         server = self
 
         self.stopped = False
+        self.saved_count = 0
+        self.bad_requests = 0
+        self.stopped_reason = ""
+        self._one_upload = threading.Semaphore(1)   # one send at a time: memory stays bounded
+        self._lock = threading.Lock()
 
         class Handler(BaseHTTPRequestHandler):
             timeout = 30   # a phone that stalls mid-send doesn't hold the connection open
+            server_version = "TimeBooks"   # don't tell visitors which Python this runs
+            sys_version = ""
 
             def log_message(self, *args) -> None:   # no console output
                 pass
@@ -95,25 +104,53 @@ class PhoneUploadServer:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _refuse(self) -> None:
+                """Wrong address: 404, and after too many the page stops (someone may be guessing the code)."""
+                with server._lock:
+                    server.bad_requests += 1
+                    too_many = server.bad_requests >= MAX_BAD_REQUESTS and not server.stopped
+                self.send_error(404)
+                if too_many:
+                    server.stopped_reason = "Too many wrong addresses were tried, so the phone page was stopped."
+                    threading.Thread(target=server.stop, daemon=True).start()
+
             def do_GET(self) -> None:
-                if not self._ok_path():
-                    self.send_error(404)
+                if server.stopped or not self._ok_path():
+                    self._refuse()
                     return
                 self._page("Take a picture of each receipt, then Send.")
 
             def do_POST(self) -> None:
-                if not self._ok_path("upload"):
-                    self.send_error(404)
+                if server.stopped or not self._ok_path("upload"):
+                    self._refuse()
                     return
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = -1
                 if length <= 0 or length > MAX_UPLOAD:
                     self._page("That was too big to send at once. Send fewer photos at a time.", 413)
                     return
+                if server.saved_count >= MAX_FILES:
+                    self._page("That's the limit for one go. Close the window in TimeBooks and open it again.", 429)
+                    return
+                if not server._one_upload.acquire(blocking=False):
+                    self._page("Another send is still arriving. Wait a moment and send again.", 503)
+                    return
+                try:
+                    self._receive(length)
+                finally:
+                    server._one_upload.release()
+
+            def _receive(self, length: int) -> None:
                 body = self.rfile.read(length)
                 if server.stopped:   # the window closed while this was sending: don't leave a file with no draft
                     self._page("TimeBooks stopped receiving. Open From my phone again and resend.", 503)
                     return
                 files = save_parts(self.headers.get("Content-Type", ""), body, server.dest)
+                files = files[:MAX_FILES - server.saved_count]
+                del body
+                server.saved_count += len(files)
                 for f in files:
                     on_file(f)
                 self._page(f"Sent {len(files)} receipt{'s' if len(files) != 1 else ''}. Take more, or close this page."

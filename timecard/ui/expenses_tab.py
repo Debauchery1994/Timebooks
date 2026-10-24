@@ -421,6 +421,11 @@ class PhoneUploadDialog(tk.Toplevel):
         ttk.Label(f, text="Take a picture of each receipt and tap Send; each one arrives here as a draft. The page "
                   "only works while this window is open, and only on this network. If Windows asks about the "
                   "firewall, allow private networks.", style="Muted.TLabel", wraplength=420).pack(pady=(10, 4))
+        ttk.Label(f, text="Use this only on your business or home Wi-Fi, not public Wi-Fi: the photos travel over the "
+                  "network unencrypted.", style="Warn.TLabel", wraplength=420).pack(pady=(0, 4))
+        if self.server.host.startswith("127."):
+            ttk.Label(f, text="This computer doesn't seem to be on a network, so a phone can't reach it. Connect to "
+                      "your Wi-Fi and open this window again.", style="Warn.TLabel", wraplength=420).pack(pady=(0, 4))
         self.v_count = ttk.Label(f, text="Waiting for photos…", style="Hours.TLabel")
         self.v_count.pack(pady=(4, 8))
         ttk.Button(f, text="Done", style="Accent.TButton", command=self.close).pack()
@@ -438,7 +443,9 @@ class PhoneUploadDialog(tk.Toplevel):
                 continue
             self.count += 1
             self.v_count.configure(text=f"{self.count} receipt{'s' if self.count != 1 else ''} received as drafts")
-        if self.winfo_exists() and self.server is not None:
+        if self.server is not None and self.server.stopped_reason:
+            self.v_count.configure(text=self.server.stopped_reason)
+        if self.winfo_exists() and self.server is not None and not self.server.stopped:
             self.after(500, self._poll)
 
     def close(self) -> None:
@@ -696,7 +703,10 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.app.status("Scan cancelled.")
             return
         e, fields = self._new_from_receipt(path)
-        self._review(e, path, new=True, source=str(path), fields=fields)
+        try:
+            self._review(e, path, new=True, source=str(path), fields=fields)
+        finally:
+            path.unlink(missing_ok=True)   # the scan was copied into Receipts if it was kept
 
     def scan_from_phone(self) -> None:
         if not self._scan_ready():
@@ -713,6 +723,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
         except (OSError, ValueError) as exc:
             log.warning("Phone photo %s skipped: %s", path, exc)
             return
+        path.unlink(missing_ok=True)   # the filed copy is in Receipts; don't let %TEMP% fill up
         self.book.expenses.append(e)
         self.app.mark_dirty()
         self.refresh()

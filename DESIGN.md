@@ -407,3 +407,8 @@ stored (collect W-9s).
   (safe, unique file names; 40 MB per send), and stops when the window closes. Each photo is filed with a Draft
   expense the same way as the scanner folder. Windows Firewall asks once (allow private networks); when blocked, a
   phone photo-sync folder used as the scanner folder is the fallback.
+- Limits on the phone page (it is the only part of TimeBooks that listens on the network): one send at a time (memory
+  stays bounded), 40 MB per send, 300 files per window, 30 s socket timeout, and after 30 wrong addresses the page
+  stops (no guessing the code). The server header says only "TimeBooks". Plain HTTP on the local network: the window
+  says to use it on business/home Wi-Fi only. Phone photos and scanner-dialog scans are deleted from
+  %TEMP%\TimeBooks Scans once filed in Receipts (files in the owner's own scanner folder are never deleted).
