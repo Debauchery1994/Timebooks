@@ -112,9 +112,11 @@ can find it can open it in GridCraft/Excel and read pay rates.
       so it stays a parking-lot idea.
 
 **Engineering (do this first, before adding tabs):**
-- [ ] Split `timecard/app.py` (≈4,000 lines) into `timecard/ui/` modules: `common.py` (theme, widgets, dialogs),
-      `timecard_tab.py`, `employees_tab.py`, `yearlog_tab.py`, `payroll_tab.py`, `company_tab.py`, `app.py`. No behaviour
-      change; the existing tests and screen smoke tests must pass unchanged.
+- [x] Split `timecard/app.py` (4,444 lines) into `timecard/ui/`: `common.py`, `pin.py`, `dialogs.py`,
+      `update_dialogs.py`, `timecard_tab.py`, `employees_tab.py`, `yearlog_tab.py`, `payroll_tab.py`, `company_tab.py`,
+      `app.py`; `timecard/app.py` is a shim. Code moved verbatim (checked line by line), tests and smoke test unchanged.
+- [ ] **Lock any tab with the PIN** (requested 2026-10-24): Company Settings → a "Locked by PIN" box per tab, one shared
+      lock in `ui/pin.py` that every tab uses. Company Settings itself always stays locked (it holds the switches).
 - [x] Workbook **schema version** (`schema_version` and `app_version` rows on the Company sheet). A newer app's
       workbook opens with a warning and is never saved over (no autosave, Save refuses, Save As a copy works).
       Older workbooks upgrade on save: the writers always write every current column, so no separate migration

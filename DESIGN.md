@@ -30,7 +30,8 @@ Run from source: `..\.venv\Scripts\python -m timecard` (package dir `timecard/ti
 | `calc.py` | agent A | time parsing/formatting, daily/weekly hours, overtime, pay & withholding, amount-to-words, YTD |
 | `storage.py` | agent A | load/save/create the workbook with openpyxl |
 | `checks.py` | agent B | reportlab PDFs: checks, payroll register, printable time card |
-| `app.py` + `__main__.py` | agent C | tkinter GUI |
+| `app.py` + `__main__.py` | agent C | entry point (`app.py` re-exports `ui.app.main`) |
+| `ui/` | | tkinter GUI, one module per tab: `common` (themes, settings, helpers, widgets), `pin` (PIN dialogs and lock overlay), `dialogs`, `update_dialogs`, `timecard_tab`, `employees_tab`, `yearlog_tab`, `payroll_tab`, `company_tab`, `app` (main window) |
 | `tests/` | each agent | `unittest` tests, run with `..\.venv\Scripts\python -m unittest discover -s tests` from `timecard/` |
 
 ## Workbook schema (sheet names and column headers are exact; row 1 = headers)
