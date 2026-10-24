@@ -3113,6 +3113,23 @@ class CompanyTab(ttk.Frame):
                                 command=self._toggle_show).grid(row=r + 1, column=1, sticky="w", pady=3)
                 rows[section] += 1
 
+        # Where the data lives. Shown only here (behind the PIN), not in the header; locking the file is the owner's
+        # choice, so this explains how rather than doing it for them.
+        r = rows["Company"]
+        ttk.Label(frames["Company"], text="Your data is stored in this file:").grid(
+            row=r, column=0, columnspan=2, sticky="w", pady=(14, 2))
+        self.v_data_path = tk.StringVar(value="")
+        ttk.Entry(frames["Company"], textvariable=self.v_data_path, state="readonly").grid(
+            row=r + 1, column=0, columnspan=2, sticky="ew")
+        ttk.Label(frames["Company"], style="Muted.TLabel", wraplength=420, justify="left",
+                  text="The PIN locks this app, not the file: anyone who can open the file in GridCraft or Excel "
+                       "can read it. If you want the file locked too, use Windows: keep the computer behind its "
+                       "Windows sign-in, turn on BitLocker (or Device Encryption), or right-click the file > "
+                       "Properties > Advanced > Encrypt contents (Windows Pro). Backups and USB copies are "
+                       "separate files, so lock those the same way.").grid(
+            row=r + 2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        rows["Company"] += 3
+
         ttk.Label(frames["Pay"], text="Contractors: leave overtime off so every hour is paid at the same rate.",
                   style="Muted.TLabel", wraplength=360).grid(row=rows["Pay"], column=0, columnspan=2, sticky="w",
                                                              pady=(8, 0))
@@ -3300,6 +3317,7 @@ class CompanyTab(ttk.Frame):
                 self.vars[fname].set("" if val is None else str(val))
         self.v_show.set(False)
         self._toggle_show()
+        self.v_data_path.set(str(self.book.path) if self.book.path else "Not saved yet")
         self._update_ot_state()
         self._update_layout_state()
         self._update_swatch()

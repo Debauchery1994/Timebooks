@@ -105,8 +105,8 @@ can find it can open it in GridCraft/Excel and read pay rates.
 - [x] Top banner shows the workbook's file name, not its full path (and so do the "Opened…" / "Created…" messages)
 - [x] File → Recent Files shows names only (the folder name only when two names match)
 - [x] Status bar after Save / Save As / backup / printing shows file names, not folders
-- [ ] Decide which of these go behind the PIN: Open in GridCraft, Open Output Folder, Recent Files, File → Open
-      (whose dialog starts in the workbook's folder)
+- [x] Nothing extra goes behind the PIN (decided 2026-10-24: locking the file is the owner's choice). Company
+      Settings (behind the PIN) shows where the data file is and how to lock it with Windows if they want to
 - [x] Help → About says plainly that the PIN protects the app, not the file; the file is protected by
       the Windows sign-in (and BitLocker on a laptop). Locking the file itself would break "readable in GridCraft/Excel",
       so it stays a parking-lot idea.
