@@ -691,6 +691,9 @@ class App(tk.Tk):
                 book.upsert_employee(dataclasses.replace(emp))
                 if carry_from.has_pay_rate(emp.employee_id):
                     book.set_pay_rate(emp.employee_id, emp.pay_rate)
+            # rent and subscriptions keep repeating in the new year; the owner's categories carry over too
+            book.recurring = [dataclasses.replace(r) for r in carry_from.recurring]
+            book.categories = list(carry_from.categories)
         return book
 
     def save(self) -> bool:

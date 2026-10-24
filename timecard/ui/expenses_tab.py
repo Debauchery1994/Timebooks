@@ -208,7 +208,7 @@ class TripDialog(ModalDialog):
             self.w["person"].current(idx)
         for key, val in (("purpose", t.purpose), ("from", t.from_place), ("to", t.to_place), ("notes", t.notes)):
             self.w[key].insert(0, val)
-        self.w["miles"].insert(0, f"{t.miles:.1f}" if t.miles else "")
+        self.w["miles"].insert(0, f"{t.miles:.2f}" if t.miles else "")
         ttk.Label(f, text=f"At ${t.rate:.3f} a mile (Company Settings > Pay; confirm each year with your tax "
                   "professional).", style="Muted.TLabel", wraplength=360).grid(row=7, column=0, columnspan=2,
                                                                               sticky="w", pady=(6, 0))
@@ -279,12 +279,12 @@ class MileageDialog(ModalDialog):
             route = " → ".join(x for x in (t.from_place, t.to_place) if x)
             who = self._person_name(t.person_id)
             self.tree.insert("", "end", iid=t.trip_id, values=(f"{t.trip_date:%m/%d/%Y}", who, t.purpose, route,
-                                                               f"{t.miles:.1f}", fmt_money(t.amount)))
+                                                               f"{t.miles:.2f}", fmt_money(t.amount)))
         self.atree.delete(*self.atree.get_children())
         for pid, (miles, mileage, spent) in sorted(expenses.account_totals(self.book.trips, self.book.expenses,
                                                                            year).items(),
                                                   key=lambda kv: self._person_name(kv[0]).lower()):
-            self.atree.insert("", "end", values=(self._person_name(pid), f"{miles:.1f}", fmt_money(mileage),
+            self.atree.insert("", "end", values=(self._person_name(pid), f"{miles:.2f}", fmt_money(mileage),
                                                  fmt_money(spent)))
 
     def _sel(self) -> Trip | None:
@@ -679,7 +679,9 @@ class ExpensesTab(PinLockable, ttk.Frame):
         """Add a Draft for each recurring expense that has come due (also when the workbook is opened)."""
         if self.book is None or not self.book.company.use_expenses or not self.book.recurring:
             return 0
-        drafts = expenses.due_drafts(self.book.recurring, self.book.expenses, date.today())
+        # never past the workbook's year: opening last year's workbook must not fill it with this year's bills
+        until = min(date.today(), date(self.book.company.year, 12, 31))
+        drafts = expenses.due_drafts(self.book.recurring, self.book.expenses, until)
         if drafts:
             self.book.expenses.extend(drafts)
             self.app.mark_dirty()

@@ -336,6 +336,13 @@ class EmployeesTab(PinLockable, ttk.Frame):
                     "The old rate will be cleared and they will be left out of Pay & Checks until a new one "
                     "is set.", parent=self):
                 return
+        paid_this_year = any(r.employee_id == cur.employee_id and not r.voided for r in self.book.payroll)
+        if calc.is_owner(new) and not calc.is_owner(cur) and paid_this_year and not messagebox.askokcancel(
+                "Owner", f"{new.full_name} was paid by check this year. As an Owner they won't be paid in Pay & "
+                "Checks and are left out of the annual (1099) statements, including the checks already written. "
+                "Keep them as they are until the statements are done if those checks need to be reported.",
+                parent=self):
+            return
         if new != cur:
             self.book.upsert_employee(new)
             if type_changed:
