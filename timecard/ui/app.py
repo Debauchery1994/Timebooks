@@ -737,7 +737,6 @@ class App(tk.Tk):
         try:
             copy = backup.backup_workbook(self.book.path, dest, int(self.settings.data.get("backup_keep")
                                                                     or backup.DEFAULT_KEEP))
-            backup.backup_receipts(self.book.path, dest)   # receipt files live next to the workbook, not in it
         except OSError as exc:
             log.warning("Backup failed: %s", exc)
             msg = (f"Backup skipped: {dest} is not available. Is Google Drive (or the backup drive) connected?"
@@ -746,6 +745,10 @@ class App(tk.Tk):
             if not quiet:
                 messagebox.showwarning("Backup", msg, parent=self)
             return None
+        try:
+            backup.backup_receipts(self.book.path, dest)   # receipt files live next to the workbook, not in it
+        except OSError as exc:
+            log.warning("Receipt backup incomplete: %s", exc)
         self.settings.data["last_backup"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         self.settings.save()
         self.status("Saved and backed up.")

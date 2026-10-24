@@ -306,6 +306,11 @@ class TimecardBook:
                     exp = cls._read_expense(r)
                     if exp:
                         book.expenses.append(exp)
+            used: set[str] = set()
+            for exp in book.expenses:   # blank or repeated ids (rows pasted in GridCraft) get fresh ones
+                if not exp.expense_id or exp.expense_id in used:
+                    exp.expense_id = expenses_mod.next_expense_id(book.expenses)
+                used.add(exp.expense_id)
             if (ws := sheet("categories")) is not None:
                 cats = [_text(r.get("category")) for r in _rows(ws)]
                 book.categories = [c for c in dict.fromkeys(cats) if c] or list(expenses_mod.DEFAULT_CATEGORIES)
@@ -394,7 +399,7 @@ class TimecardBook:
     @staticmethod
     def _read_expense(r: dict[str, Any]) -> Expense | None:
         exp_id, d = _text(r.get("expenseid")), _to_date(r.get("date"))
-        if not exp_id or d is None:
+        if d is None:
             return None
         check = _to_int(r.get("checknumber"), 0)
         status = _text(r.get("status")).capitalize()

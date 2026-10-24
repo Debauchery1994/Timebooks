@@ -92,8 +92,11 @@ def backup_receipts(workbook: str | Path, dest_root: str | Path) -> int:
     copied = 0
     for f in src.rglob("*"):
         target = target_root / f.relative_to(src)
-        if f.is_file() and not (target.is_file() and target.stat().st_size == f.stat().st_size):
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, target)
-            copied += 1
+        try:
+            if f.is_file() and not (target.is_file() and target.stat().st_size == f.stat().st_size):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, target)
+                copied += 1
+        except OSError:   # a locked or unreadable receipt: skip it, the next backup tries again
+            continue
     return copied

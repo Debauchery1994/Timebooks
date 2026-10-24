@@ -2,6 +2,7 @@
 scanned, picked up from the scanner's folder or imported, read automatically, and approved on a review screen."""
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from datetime import date, datetime
 from decimal import Decimal
@@ -82,6 +83,11 @@ class ExpenseDialog(ModalDialog):
 
     def apply(self) -> bool:
         w = self.w
+        for key in ("amount", "tax"):
+            if re.search(r",\d{1,2}\s*$", w[key].get()):
+                messagebox.showwarning("Expense", f"Use a dot for cents, e.g. 12.50 (not {w[key].get().strip()}).",
+                                       parent=self)
+                return False
         try:
             d = parse_date(w["date"].get())
             amount = parse_money(w["amount"].get() or "0")
@@ -292,7 +298,9 @@ class ExpensesTab(PinLockable, ttk.Frame):
             try:
                 result.receipt_file = expenses.file_receipt(dlg.receipt_source, result, self.book.path)
             except (OSError, ValueError) as exc:
-                messagebox.showwarning("Receipt", f"The receipt could not be attached:\n{exc}", parent=self)
+                if not messagebox.askyesno("Receipt", f"The receipt could not be attached:\n{exc}\n\nSave the "
+                                           "expense without it? (Choose No to keep what you had.)", parent=self):
+                    return
         if result.category not in self.book.categories:
             self.book.categories.append(result.category)
         if new:

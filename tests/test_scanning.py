@@ -52,6 +52,13 @@ class ScannerFolderTests(unittest.TestCase):
             self.assertEqual(scanning.new_scans(folder, {scanning.scan_key(found[0])}), [found[1]])
             self.assertEqual(scanning.new_scans(folder / "missing", set()), [])
 
+    def test_a_scan_still_being_written_waits_for_the_next_check(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "scan.pdf"
+            p.write_bytes(b"half")
+            self.assertEqual(scanning.new_scans(d, set()), [])   # just written
+            self.assertEqual(scanning.new_scans(d, set(), now=time.time() + 60), [p])
+
 
 class ScannerDialogTests(unittest.TestCase):
     def _run(self, code: int, make_file: bool = False):

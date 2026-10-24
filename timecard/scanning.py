@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -63,13 +64,27 @@ def scan_key(p: Path) -> str:
     return f"{p.name}|{st.st_size}|{int(st.st_mtime)}"
 
 
-def new_scans(folder: str | Path, seen: set[str]) -> list[Path]:
-    """Receipt files (pictures, PDFs) in the scanner folder that haven't been brought in yet, oldest first."""
+SETTLE_SECONDS = 10   # a scan this new may still be being written by the scanner: pick it up next time
+
+
+def new_scans(folder: str | Path, seen: set[str], now: float | None = None) -> list[Path]:
+    """Receipt files (pictures, PDFs) in the scanner folder that haven't been brought in yet, oldest first. Files
+    changed in the last few seconds are left for the next check, and files that disappear meanwhile are skipped."""
     f = Path(folder)
     if not f.is_dir():
         return []
-    files = [p for p in f.iterdir() if p.is_file() and p.suffix.lower() in expenses.RECEIPT_TYPES]
-    return sorted((p for p in files if scan_key(p) not in seen), key=lambda p: p.stat().st_mtime)
+    now = time.time() if now is None else now
+    found: list[tuple[float, Path]] = []
+    for p in f.iterdir():
+        try:
+            if not p.is_file() or p.suffix.lower() not in expenses.RECEIPT_TYPES:
+                continue
+            mtime = p.stat().st_mtime
+            if now - mtime >= SETTLE_SECONDS and scan_key(p) not in seen:
+                found.append((mtime, p))
+        except OSError:   # removed or locked while we looked
+            continue
+    return [p for _m, p in sorted(found)]
 
 
 def expense_from_receipt(fields: ReceiptFields, expense_id: str, existing: list[Expense],

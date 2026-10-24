@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import unittest.mock
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -73,6 +74,13 @@ class ReceiptFilingTests(unittest.TestCase):
             dest = Path(d) / "Drive"
             self.assertEqual(backup.backup_receipts(wb, dest), 1)
             self.assertEqual(backup.backup_receipts(wb, dest), 0)   # nothing new
+            bad = r.parent / "locked.jpg"
+            bad.write_bytes(b"2")
+            real_copy = backup.shutil.copy2
+            with unittest.mock.patch.object(backup.shutil, "copy2",
+                                            side_effect=lambda a, b: (_ for _ in ()).throw(PermissionError("locked"))
+                                            if Path(a).name == "locked.jpg" else real_copy(a, b)):
+                self.assertEqual(backup.backup_receipts(wb, dest), 0)   # skipped, not an error
             copied = backup.backup_root(dest) / "Acme 2026 Receipts" / "2026" / "a.jpg"
             self.assertEqual(copied.read_bytes(), b"1")
 
@@ -99,6 +107,21 @@ class ExpenseStorageTests(unittest.TestCase):
             old = TimecardBook.load(path)
             self.assertEqual(old.expenses, [])
             self.assertEqual(old.categories, list(expenses.DEFAULT_CATEGORIES))
+
+    def test_pasted_rows_with_repeated_or_blank_ids_get_fresh_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "b.xlsx"
+            b = TimecardBook.new(Company(year=2026))
+            b.expenses.append(_exp(1, date(2026, 10, 3), "A", "Supplies", "1.00"))
+            b.save(path)
+            wb = openpyxl.load_workbook(path)
+            ws = wb["Expenses"]
+            ws.append(["X0001", date(2026, 10, 4), "B", "", "Supplies", 2.0])   # pasted copy, same id
+            ws.append([None, date(2026, 10, 5), "C", "", "Supplies", 3.0])      # no id
+            wb.save(path)
+            ids = [e.expense_id for e in TimecardBook.load(path).expenses]
+            self.assertEqual(len(ids), 3)
+            self.assertEqual(len(set(ids)), 3)
 
 
 if __name__ == "__main__":
