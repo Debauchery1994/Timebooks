@@ -62,6 +62,9 @@ class Employee:
     pay_rate: Decimal = Decimal("0")  # stored in workbook only; never shown in the GUI
     active: bool = True
     notes: str = ""
+    # Salary only: what pay_rate means. "Annual" = yearly salary (each check is a share of it);
+    # "Per Period" = the amount of every check.
+    salary_basis: str = "Annual"
 
     @property
     def display_name(self) -> str:

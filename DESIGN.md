@@ -43,8 +43,12 @@ overtime_multiplier, federal_withholding_pct, state_withholding_pct, social_secu
 medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signature_line_text`
 
 ### `Employees`
-`EmployeeID | FirstName | LastName | Address1 | Address2 | PayType | PayRate | Active | Notes`
-- PayType: `Hourly` or `Salary` (Salary: PayRate = ANNUAL salary; each check = annual ÷ periods per year (52/26/24/12); hours still tracked).
+`EmployeeID | FirstName | LastName | Address1 | Address2 | PayType | PayRate | Active | Notes | SalaryBasis`
+- PayType: `Hourly` or `Salary`; hours are tracked either way.
+- SalaryBasis (Salary only, blank for Hourly): `Annual` (default, and what a workbook without the column means):
+  PayRate = yearly salary, each check = annual ÷ periods per year (52/26/24/12). `Per Period`: PayRate = the amount
+  of every check. Changing PayType or SalaryBasis in the app clears the rate so it is re-entered in the new terms.
+  Added last so existing column letters don't move.
 - Active: `Yes`/`No`. PayRate cell number format `$#,##0.00`.
 
 ### `TimeLog` — one row per employee per day worked

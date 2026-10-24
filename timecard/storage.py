@@ -32,7 +32,7 @@ FMT_MONEY = "$#,##0.00"
 FMT_HOURS = "0.00"
 
 EMPLOYEE_HEADERS = ["EmployeeID", "FirstName", "LastName", "Address1", "Address2",
-                    "PayType", "PayRate", "Active", "Notes"]
+                    "PayType", "PayRate", "Active", "Notes", "SalaryBasis"]
 TIMELOG_HEADERS = ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
                    "LunchDeductMin", "Hours", "Notes"]
 PAYROLL_HEADERS = ["CheckNumber", "CheckDate", "PeriodStart", "PeriodEnd", "EmployeeID", "Employee",
@@ -275,6 +275,7 @@ class TimecardBook:
         if not emp_id:
             return None
         pay_type = _text(r.get("paytype")) or "Hourly"
+        basis = _text(r.get("salarybasis")).lower().replace(" ", "")
         return Employee(
             employee_id=emp_id,
             first_name=_text(r.get("firstname")),
@@ -285,6 +286,7 @@ class TimecardBook:
             pay_rate=calc.money(_to_decimal(r.get("payrate"))),
             active=_to_bool(r.get("active"), default=True),
             notes=_text(r.get("notes")),
+            salary_basis="Per Period" if basis.startswith("per") else "Annual",  # missing column: yearly
         )
 
     @staticmethod
@@ -408,11 +410,13 @@ class TimecardBook:
                 row[1].number_format = "@"
 
     def _write_employees(self, ws: Worksheet) -> None:
-        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30])
+        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30, 12])
         for emp in sorted(self.employees.values(), key=lambda e: e.employee_id):
             ws.append([emp.employee_id, emp.first_name, emp.last_name, emp.address1, emp.address2,
                        emp.pay_type, float(calc.money(emp.pay_rate)),
-                       "Yes" if emp.active else "No", emp.notes])
+                       "Yes" if emp.active else "No", emp.notes,
+                       ("Per Period" if calc.salary_is_per_period(emp) else "Annual")
+                       if emp.pay_type.strip().lower() == "salary" else ""])
             _fmt_row(ws, ws.max_row, {7: FMT_MONEY})
 
     def _write_timelog(self, ws: Worksheet) -> None:

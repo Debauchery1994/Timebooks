@@ -34,7 +34,7 @@ from .storage import TimecardBook, WorkbookError
 try:
     from . import APP_NAME, __version__
 except ImportError:  # pragma: no cover
-    APP_NAME, __version__ = "TimeCard Pro", "1.1.1"
+    APP_NAME, __version__ = "TimeCard Pro", "1.1.2"
 
 # --------------------------------------------------------------------------- constants
 
@@ -439,9 +439,19 @@ def setup_logging() -> None:
 
 # --------------------------------------------------------------------------- helpers
 
-def pay_type_label(pay_type: str) -> str:
-    """Display label for the stored PayType value ("Hourly" / "Salary")."""
-    return "Salaried" if (pay_type or "").strip().lower() == "salary" else "Hourly"
+def pay_type_label(pay_type: str, salary_basis: str = "Annual") -> str:
+    """Display label for the stored PayType value ("Hourly" / "Salary") and, for salaries, its basis."""
+    if (pay_type or "").strip().lower() != "salary":
+        return "Hourly"
+    per_period = (salary_basis or "").strip().lower().replace(" ", "") == "perperiod"
+    return "Salaried (per period)" if per_period else "Salaried (per year)"
+
+
+def salary_amount_text(emp: Employee, company: Company) -> str:
+    """'an annual salary' / 'a salary per pay period (Weekly)' for messages."""
+    if calc.salary_is_per_period(emp):
+        return f"a salary per pay period ({company.pay_period.lower()})"
+    return "an annual salary"
 
 
 def is_salaried(emp: Employee) -> bool:
@@ -786,25 +796,31 @@ class PayRateDialog(ModalDialog):
     def __init__(self, master, book: TimecardBook, emp: Employee):
         self.book, self.emp = book, emp
         self.salaried = is_salaried(emp)
-        super().__init__(master, "Set Annual Salary" if self.salaried else "Set Hourly Rate")
+        self.per_period = self.salaried and calc.salary_is_per_period(emp)
+        super().__init__(master, ("Set Salary per Pay Period" if self.per_period else "Set Annual Salary")
+                         if self.salaried else "Set Hourly Rate")
 
     def body(self, f):
-        what = "annual salary" if self.salaried else "hourly rate"
+        period = self.book.company.pay_period.lower()
+        what = (f"salary per pay period ({period})" if self.per_period else "annual salary") if self.salaried \
+            else "hourly rate"
         ttk.Label(f, text=f"Set the {what} for {self.emp.full_name}.").grid(row=0, column=0, columnspan=2,
                                                                             sticky="w")
         ttk.Label(f, text="The rate is saved in the workbook and is never shown on screen.",
                   style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
         self.e1 = ttk.Entry(f, show="\u2022", width=20)
         self.e2 = ttk.Entry(f, show="\u2022", width=20)
-        label = "Annual salary" if self.salaried else "Hourly rate"
+        label = ("Salary per pay period" if self.per_period else "Annual salary") if self.salaried \
+            else "Hourly rate"
         ttk.Label(f, text=label).grid(row=2, column=0, sticky="w", pady=4)
         self.e1.grid(row=2, column=1, sticky="w", pady=4)
         ttk.Label(f, text=f"Confirm {label.lower()}").grid(row=3, column=0, sticky="w", pady=4)
         self.e2.grid(row=3, column=1, sticky="w", pady=4)
         if self.salaried:
-            ttk.Label(f, text="Each check is the annual salary divided by the number of pay periods in the "
-                      "year.", style="Muted.TLabel", wraplength=340).grid(row=4, column=0, columnspan=2,
-                                                                          sticky="w", pady=(6, 0))
+            note = (f"Each check is this amount, before adjustments (pay period: {period})." if self.per_period
+                    else "Each check is the annual salary divided by the number of pay periods in the year.")
+            ttk.Label(f, text=note, style="Muted.TLabel", wraplength=340).grid(row=4, column=0, columnspan=2,
+                                                                               sticky="w", pady=(6, 0))
         return self.e1
 
     def apply(self) -> bool:
@@ -1606,7 +1622,7 @@ class EmployeesTab(ttk.Frame):
         ttk.Label(bar, textvariable=self.v_count, style="Muted.TLabel").pack(side="right", padx=10)
         cols = ("id", "name", "type", "active", "rate")
         self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="browse")
-        for c, h, w, anchor in (("id", "ID", 70, "w"), ("name", "Name", 220, "w"), ("type", "Pay Type", 90, "w"),
+        for c, h, w, anchor in (("id", "ID", 70, "w"), ("name", "Name", 220, "w"), ("type", "Pay Type", 150, "w"),
                                 ("active", "Status", 90, "center"), ("rate", "Rate on file", 90, "center")):
             self.tree.heading(c, text=h)
             self.tree.column(c, width=w, anchor=anchor, stretch=(c == "name"))
@@ -1619,7 +1635,8 @@ class EmployeesTab(ttk.Frame):
 
         form = ttk.LabelFrame(self, text="Employee", padding=12)
         form.pack(side="left", fill="y", padx=(12, 0))
-        self.v = {k: tk.StringVar() for k in ("first", "last", "address1", "address2", "pay_type")}
+        self.v = {k: tk.StringVar() for k in ("first", "last", "address1", "address2", "pay_type",
+                                              "salary_basis")}
         self.v_active = tk.BooleanVar(value=True)
         self.v_id = tk.StringVar(value="(new)")
         r = 0
@@ -1637,6 +1654,16 @@ class EmployeesTab(ttk.Frame):
         ttk.Radiobutton(pt, text="Hourly", value="Hourly", variable=self.v["pay_type"]).pack(side="left")
         ttk.Radiobutton(pt, text="Salaried", value="Salary", variable=self.v["pay_type"]).pack(side="left",
                                                                                               padx=(12, 0))
+        r += 1
+        self.lbl_basis = ttk.Label(form, text="Salary is")
+        self.lbl_basis.grid(row=r, column=0, sticky="w", pady=3)
+        self.basis_row = ttk.Frame(form)
+        self.basis_row.grid(row=r, column=1, sticky="w", pady=3)
+        ttk.Radiobutton(self.basis_row, text="Per year", value="Annual",
+                        variable=self.v["salary_basis"]).pack(side="left")
+        ttk.Radiobutton(self.basis_row, text="Per pay period", value="Per Period",
+                        variable=self.v["salary_basis"]).pack(side="left", padx=(12, 0))
+        self.v["pay_type"].trace_add("write", lambda *_: self._show_basis())
         r += 1
         self.v_status = tk.StringVar(value="Active")
         ttk.Label(form, text="Status").grid(row=r, column=0, sticky="w", pady=3)
@@ -1735,7 +1762,7 @@ class EmployeesTab(ttk.Frame):
             if e.active and not has:
                 tags = ("norate",)
             self.tree.insert("", "end", iid=e.employee_id, tags=tags,
-                             values=(e.employee_id, e.display_name + ("" if e.active else "  (former)"), pay_type_label(e.pay_type),
+                             values=(e.employee_id, e.display_name + ("" if e.active else "  (former)"), pay_type_label(e.pay_type, e.salary_basis),
                                      "Active" if e.active else "Former",
                                      "Yes" if has else "No"))
         if self.selected and self.tree.exists(self.selected):
@@ -1757,6 +1784,7 @@ class EmployeesTab(ttk.Frame):
         self.v["last"].set(e.last_name)
         self.v["address1"].set(e.address1)
         self.v["address2"].set(e.address2)
+        self.v["salary_basis"].set("Per Period" if calc.salary_is_per_period(e) else "Annual")
         self.v["pay_type"].set(e.pay_type)
         self.v_active.set(e.active)
         self.v_status.set("Active" if e.active else "No longer with the company (records kept)")
@@ -1772,12 +1800,21 @@ class EmployeesTab(ttk.Frame):
         self.v_id.set("(new)")
         for k in ("first", "last", "address1", "address2"):
             self.v[k].set("")
+        self.v["salary_basis"].set("Annual")
         self.v["pay_type"].set("Hourly")
         self.v_active.set(True)
         self.v_status.set("Active")
         self.notes.delete("1.0", "end")
         self.v_rate.set("Rate on file: -")
         self.btn_deact.configure(text="No Longer With Company")
+
+    def _show_basis(self) -> None:
+        """'Salary is per year / per pay period' only applies to salaried people."""
+        for w in (self.lbl_basis, self.basis_row):
+            if self.v["pay_type"].get() == "Salary":
+                w.grid()
+            else:
+                w.grid_remove()
 
     def _form_values(self) -> dict | None:
         first, last = self.v["first"].get().strip(), self.v["last"].get().strip()
@@ -1786,6 +1823,7 @@ class EmployeesTab(ttk.Frame):
             return None
         return dict(first_name=first, last_name=last, address1=self.v["address1"].get().strip(),
                     address2=self.v["address2"].get().strip(), pay_type=self.v["pay_type"].get() or "Hourly",
+                    salary_basis=self.v["salary_basis"].get() or "Annual",
                     active=bool(self.v_active.get()), notes=self.notes.get("1.0", "end").strip())
 
     def add(self) -> None:
@@ -1811,12 +1849,17 @@ class EmployeesTab(ttk.Frame):
             return
         cur = self.book.employees[self.selected]
         new = dataclasses.replace(cur, **vals)
-        type_changed = is_salaried(cur) != is_salaried(new) and self.book.has_pay_rate(cur.employee_id)
+        basis_changed = (is_salaried(cur) and is_salaried(new)
+                         and calc.salary_is_per_period(cur) != calc.salary_is_per_period(new))
+        type_changed = ((is_salaried(cur) != is_salaried(new) or basis_changed)
+                        and self.book.has_pay_rate(cur.employee_id))
         if type_changed:
-            want = "an annual salary" if is_salaried(new) else "an hourly rate"
+            want = salary_amount_text(new, self.book.company) if is_salaried(new) else "an hourly rate"
+            old_label = pay_type_label(cur.pay_type, cur.salary_basis)
+            new_label = pay_type_label(new.pay_type, new.salary_basis)
             if not messagebox.askokcancel(
-                    "Pay type changed", f"{new.full_name} is changing from {pay_type_label(cur.pay_type)} to "
-                    f"{pay_type_label(new.pay_type)}.\n\nThe rate on file must be re-entered as {want}. "
+                    "Pay type changed", f"{new.full_name} is changing from {old_label} to "
+                    f"{new_label}.\n\nThe rate on file must be re-entered as {want}. "
                     "The old rate will be cleared and they will be left out of Pay & Checks until a new one "
                     "is set.", parent=self):
                 return

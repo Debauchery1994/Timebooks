@@ -179,13 +179,25 @@ def salary_per_period(annual: Decimal, company: Company) -> Decimal:
     return money(_dec(annual) / PERIODS_PER_YEAR.get(company.pay_period.strip().lower(), 52))
 
 
+def salary_is_per_period(employee: Employee) -> bool:
+    """True when a salaried employee's pay_rate is the amount per pay period rather than per year."""
+    return (employee.salary_basis or "").strip().lower().replace(" ", "") == "perperiod"
+
+
+def salary_check_amount(employee: Employee, company: Company) -> Decimal:
+    """One pay period's salary: the rate itself when entered per pay period, else annual / periods per year."""
+    if salary_is_per_period(employee):
+        return money(employee.pay_rate)
+    return salary_per_period(employee.pay_rate, company)
+
+
 def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *,
                     check_number: int, check_date: date, period_start: date, period_end: date,
                     other_deductions: Decimal = Decimal("0"), memo: str = "") -> PayrollRecord:
     """Gross, flat-percent withholding estimate and net for one employee/period."""
     rate = _dec(employee.pay_rate)
     if employee.pay_type.strip().lower() == "salary":
-        regular_pay, overtime_pay = salary_per_period(rate, company), money(0)
+        regular_pay, overtime_pay = salary_check_amount(employee, company), money(0)
     else:
         regular_pay = money(hours.regular * rate)
         overtime_pay = money(hours.overtime * rate * _dec(company.overtime_multiplier))
