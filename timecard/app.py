@@ -460,6 +460,13 @@ def is_salaried(emp: Employee) -> bool:
     return (emp.pay_type or "").strip().lower() == "salary"
 
 
+def recent_labels(recent: list[str]) -> list[str]:
+    """Recent Files labels: the file name only (the full path would show visitors where the unlocked workbook
+    lives); the folder name is added only when two files share a name."""
+    names = [Path(p).name for p in recent]
+    return [f"{n}  ({Path(p).parent.name})" if names.count(n) > 1 else n for p, n in zip(recent, names)]
+
+
 def _has_pay_hours(hours: HoursSummary) -> bool:
     """Hours worked or paid time off: something an hourly person is paid for."""
     return hours.total > 0 or hours.paid_leave > 0
@@ -1370,7 +1377,7 @@ class TimeCardTab(ttk.Frame):
         if out is None:
             return
         path = checks.render_timecard(emp, self.book.entries_for(eid, start, end), start, end, self.book, out)
-        self.app.status(f"Time card saved to {path}")
+        self.app.status(f"Time card saved: {Path(path).name}")
         open_file(Path(path))
 
 
@@ -2278,7 +2285,7 @@ class YearLogTab(ttk.Frame):
             w.writerow(["Total", "", "", fmt_hours(sum(Decimal(r[3].replace(",", "")) for r in rows)),
                         fmt_hours(sum(Decimal(r[4].replace(",", "")) for r in rows)), "",
                         str(sum(int(r[6]) for r in rows)), "", ""])
-        self.app.status(f"Exported {len(rows)} pay period rows to {path}")
+        self.app.status(f"Exported {len(rows)} pay period rows to {Path(path).name}")
 
 
 # --------------------------------------------------------------------------- Payroll tab
@@ -2862,7 +2869,7 @@ class PayrollTab(ttk.Frame):
         if out is None:
             return
         path = checks.render_checks(records, self.book, out, start_position=pos)
-        self.app.status(f"{done_msg} PDF: {path}")
+        self.app.status(f"{done_msg} PDF: {Path(path).name}")
         open_file(Path(path))
 
     def _selected_records(self) -> list[PayrollRecord]:
@@ -2897,7 +2904,7 @@ class PayrollTab(ttk.Frame):
             return
         path = checks.render_register(recs, self.book, out,
                                       title=f"Check Register  {p[0]:%m/%d/%Y} - {p[1]:%m/%d/%Y}")
-        self.app.status(f"Register saved to {path}")
+        self.app.status(f"Register saved: {Path(path).name}")
         open_file(Path(path))
 
     def void_check(self) -> None:
@@ -2938,7 +2945,7 @@ class PayrollTab(ttk.Frame):
         if out is None:
             return
         path = checks.render_alignment_test(self.book, out, start_position=pos)
-        self.app.status(f"Alignment test saved to {path}")
+        self.app.status(f"Alignment test saved: {Path(path).name}")
         open_file(Path(path))
 
 
@@ -3744,8 +3751,8 @@ class App(tk.Tk):
         if not recent:
             self.recent_menu.add_command(label="(none)", state="disabled")
             return
-        for i, p in enumerate(recent, 1):
-            self.recent_menu.add_command(label=f"{i}  {p}", command=lambda p=p: self.open_path(p))
+        for i, (p, label) in enumerate(zip(recent, recent_labels(recent)), 1):
+            self.recent_menu.add_command(label=f"{i}  {label}", command=lambda p=p: self.open_path(p))
         self.recent_menu.add_separator()
         self.recent_menu.add_command(label="Clear list", command=self._clear_recent)
 
@@ -4152,7 +4159,7 @@ class App(tk.Tk):
             return False
         self._autosave_paused = self._autosave_failed = False
         self.update_title()
-        self.status(f"Saved {p}")
+        self.status(f"Saved {p.name}")
         self.auto_backup()
         return True
 
@@ -4185,7 +4192,7 @@ class App(tk.Tk):
             return None
         self.settings.data["last_backup"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")
         self.settings.save()
-        self.status(f"Saved and backed up to {copy.parent}")
+        self.status("Saved and backed up.")
         return copy
 
     def save_as(self) -> bool:
@@ -4209,7 +4216,7 @@ class App(tk.Tk):
         self.settings.add_recent(Path(p))
         self._rebuild_recent()
         self.update_title()
-        self.status(f"Saved {p}")
+        self.status(f"Saved {p.name}")
         self.auto_backup()
         return True
 
@@ -4277,6 +4284,9 @@ class App(tk.Tk):
         messagebox.showinfo(f"About {APP_NAME}",
                             f"{APP_NAME} {__version__}\n\nEmployee time cards, yearly time log, payroll and check "
                             f"printing.\nData is stored in an .xlsx workbook you can open in GridCraft.\n\n"
+                            f"The PIN locks pay rates, bank numbers and settings inside this app. It doesn't lock "
+                            f"the workbook file itself: keep the computer behind its Windows sign-in (and "
+                            f"BitLocker on a laptop) and keep backups somewhere private.\n\n"
                             f"Settings and log: {SETTINGS_DIR}", parent=self)
 
     # ----- updates

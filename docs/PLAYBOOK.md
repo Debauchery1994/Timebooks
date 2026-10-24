@@ -104,10 +104,11 @@ part already works), and the memo/stub leaves out hours.
 **Security: don't advertise where the workbook is.** The `.xlsx` itself isn't protected by the PIN, so anyone who
 can find it can open it in GridCraft/Excel and read pay rates.
 - [x] Top banner shows the workbook's file name, not its full path (and so do the "Opened…" / "Created…" messages)
-- [ ] File → Recent Files shows full paths: show names only (add the folder name only when two names match)
+- [x] File → Recent Files shows names only (the folder name only when two names match)
+- [x] Status bar after Save / Save As / backup / printing shows file names, not folders
 - [ ] Decide which of these go behind the PIN: Open in GridCraft, Open Output Folder, Recent Files, File → Open
       (whose dialog starts in the workbook's folder)
-- [ ] Say plainly in Help / Company Settings that the PIN protects the app, not the file; the file is protected by
+- [x] Help → About says plainly that the PIN protects the app, not the file; the file is protected by
       the Windows sign-in (and BitLocker on a laptop). Locking the file itself would break "readable in GridCraft/Excel",
       so it stays a parking-lot idea.
 
