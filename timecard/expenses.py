@@ -85,7 +85,12 @@ def refile_receipt(e: Expense, workbook: str | Path) -> str:
     base = Path(workbook).parent
     current = receipt_path(e, workbook)
     receipts = (base / RECEIPTS_FOLDER).resolve()
-    if current is None or not current.is_file() or receipts not in current.resolve().parents:
+    if current is not None and not current.is_file():
+        # The file is already where these details say it belongs (a save that moved it but failed before the
+        # expense was updated, in 1.3.0): link to it again.
+        moved = receipt_folder(e, workbook) / receipt_name(e, current.suffix)
+        return str(moved.relative_to(base)) if moved.is_file() else e.receipt_file
+    if current is None or receipts not in current.resolve().parents:
         return e.receipt_file
     folder = receipt_folder(e, workbook)
     wanted = receipt_name(e, current.suffix)

@@ -82,6 +82,19 @@ class ReceiptFilingTests(unittest.TestCase):
             outside = _exp(2, date(2026, 10, 24), "X", "", "1.00", receipt_file=str(photo))
             self.assertEqual(expenses.refile_receipt(outside, wb), str(photo))               # never moved
 
+    def test_a_receipt_moved_by_a_failed_save_is_linked_again(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            wb = Path(d) / "Acme 2026.xlsx"
+            photo = Path(d) / "scan.png"
+            photo.write_bytes(b"png")
+            e = _exp(1, date(2026, 10, 21), "", "", "0.00")
+            e.receipt_file = expenses.file_receipt(photo, e, wb)
+            fixed = _exp(1, date(2026, 10, 21), "Shell", "", "40.00", receipt_file=e.receipt_file)
+            target = expenses.receipt_folder(fixed, wb) / expenses.receipt_name(fixed, ".png")
+            target.parent.mkdir(parents=True)
+            (Path(d) / e.receipt_file).rename(target)   # moved, but the expense wasn't updated (1.3.0 bug)
+            self.assertEqual(expenses.refile_receipt(fixed, wb), str(target.relative_to(Path(d))))
+
     def test_backups_copy_new_receipts_only(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             wb = Path(d) / "Acme 2026.xlsx"

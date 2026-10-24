@@ -25,6 +25,7 @@ class ExpenseDialog(ModalDialog):
     """Add or edit one expense. result = the Expense, plus the receipt file chosen to attach (not filed yet)."""
 
     status = "Approved"   # what OK saves (the review screen can keep a scanned receipt as a Draft)
+    repeats = "No"        # the Repeats choice, kept by apply() for after the form has closed
 
     def __init__(self, master, book, expense: Expense, title: str = "", receipt_source: str = ""):
         self.book, self.e = book, expense
@@ -119,6 +120,7 @@ class ExpenseDialog(ModalDialog):
         if problems:
             messagebox.showwarning("Expense", "\n".join(problems), parent=self)
             return False
+        self.repeats = w["repeats"].get()
         self.result = Expense(
             expense_id=self.e.expense_id, expense_date=d, vendor=vendor, category=category, amount=amount, tax=tax,
             payment_method=w["method"].get(), check_number=check if w["method"].get() == "Check" else None,
@@ -619,7 +621,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
                 log.warning("Could not move receipt %s: %s", result.receipt_file, exc)
         if result.category not in self.book.categories:
             self.book.categories.append(result.category)
-        repeats = dlg.w["repeats"].get()
+        repeats = dlg.repeats   # read in apply(): the form's widgets are gone once it closes
         if repeats in expenses.REPEATS and not result.recurring_id:
             rec = expenses.recurring_from(result, repeats, expenses.next_recurring_id(self.book.recurring))
             self.book.recurring.append(rec)
