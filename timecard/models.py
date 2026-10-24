@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, time
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 
 @dataclass
@@ -36,6 +36,8 @@ class Company:
     # Annual statements flag contractors paid at least this much (1099-NEC reporting threshold;
     # $2,000 for payments made in 2026 — confirm each year with a tax professional).
     form_1099_threshold: float = 2000.0
+    # IRS standard mileage rate ($ per business mile) for the Mileage log; confirm each year with a tax professional.
+    mileage_rate: float = 0.70
     # Time off: the hours a PTO / Holiday / Sick day fills in on the Time Card when that type is chosen (the day can
     # still be changed, e.g. 4 for a half day), and whether hourly people are paid for those hours at their regular
     # rate. Salaried pay never changes. A "Closed" day (business closed) is always 0 hours and unpaid for hourly.
@@ -81,7 +83,7 @@ class Employee:
     last_name: str
     address1: str = ""
     address2: str = ""
-    pay_type: str = "Hourly"  # Hourly | Salary
+    pay_type: str = "Hourly"  # Hourly | Salary | Owner (no payroll checks; expenses and mileage on their account)
     pay_rate: Decimal = Decimal("0")  # stored in workbook only; never shown in the GUI
     active: bool = True
     notes: str = ""
@@ -169,6 +171,25 @@ class Expense:
     vendor_id: str = ""                # the Vendors list (1.5.0)
     created: str = ""                  # when it was entered, ISO date-time
     recurring_id: str = ""             # made from this recurring expense (1.4.0)
+    person_id: str = ""                # on whose account (e.g. an owner's gas), "" = the business
+
+
+@dataclass
+class Trip:
+    """One business trip in the Mileage log."""
+    trip_id: str
+    trip_date: date
+    person_id: str = ""
+    purpose: str = ""
+    from_place: str = ""
+    to_place: str = ""
+    miles: Decimal = Decimal("0")
+    rate: Decimal = Decimal("0")       # $ per mile when the trip was logged (the rate can change each year)
+    notes: str = ""
+
+    @property
+    def amount(self) -> Decimal:
+        return (self.miles * self.rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 @dataclass

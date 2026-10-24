@@ -291,6 +291,11 @@ def salary_per_period(annual: Decimal, company: Company) -> Decimal:
     return money(_dec(annual) / PERIODS_PER_YEAR.get(company.pay_period.strip().lower(), 52))
 
 
+def is_owner(employee: Employee) -> bool:
+    """An owner (sole proprietor) takes draws, not pay: no payroll checks and no 1099."""
+    return (employee.pay_type or "").strip().lower() == "owner"
+
+
 def salary_is_per_period(employee: Employee) -> bool:
     """True when a salaried employee's pay_rate is the amount per pay period rather than per year."""
     return (employee.salary_basis or "").strip().lower().replace(" ", "") == "perperiod"

@@ -22,7 +22,8 @@ from .. import APP_NAME, __version__, backup, branding, calc, paths, security, u
 from ..storage import TimecardBook, WorkbookError
 from .common import (
     AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P,
-    SETTINGS_DIR, Settings, TEXT_SCALES, THEMES, THEME_NAMES, _appearance, _apply_brand_palette, _brand, apply_appearance, apply_tk_colors,
+    SETTINGS_DIR, Settings, TEXT_SCALES, THEMES, THEME_NAMES, _appearance, _apply_brand_palette, _brand,
+    apply_appearance, apply_tk_colors,
     documents_dir, is_salaried, log, logo_photo, open_file, recent_labels, relayout_flows, safe_filename, scaled,
     setup_logging, tag_role,
 )

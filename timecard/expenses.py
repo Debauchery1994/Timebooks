@@ -14,7 +14,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from .models import Expense, Recurring
+from .models import Expense, Recurring, Trip
 
 # IRS Schedule C expense lines, so the tax professional can use the totals directly. The owner can add more.
 DEFAULT_CATEGORIES = (
@@ -140,4 +140,24 @@ def due_drafts(items: list[Recurring], existing: list[Expense], today: date) -> 
                                    recurring_id=r.recurring_id, created=today.isoformat()))
             r.next_date = add_period(r.next_date, r.every, anchor)
     return out
+
+
+# ---- mileage and accounts
+
+def next_trip_id(trips: list[Trip]) -> str:
+    nums = [int(m[1]) for t in trips if (m := re.fullmatch(r"T(\d+)", t.trip_id))]
+    return f"T{max(nums, default=0) + 1:04d}"
+
+
+def account_totals(trips: list[Trip], items: list[Expense], year: int) -> dict[str, tuple[Decimal, Decimal, Decimal]]:
+    """Per person ("" = the business): (miles, mileage amount, expenses on their account) in `year`; drafts left out."""
+    out: dict[str, list[Decimal]] = defaultdict(lambda: [Decimal("0"), Decimal("0"), Decimal("0")])
+    for t in trips:
+        if t.trip_date.year == year:
+            out[t.person_id][0] += t.miles
+            out[t.person_id][1] += t.amount
+    for e in items:
+        if e.expense_date.year == year and e.status != "Draft" and e.person_id:
+            out[e.person_id][2] += e.amount
+    return {k: (v[0], v[1], v[2]) for k, v in out.items()}
 

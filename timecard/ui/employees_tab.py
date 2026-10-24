@@ -134,6 +134,7 @@ class EmployeesTab(PinLockable, ttk.Frame):
         ttk.Radiobutton(pt, text="Hourly", value="Hourly", variable=self.v["pay_type"]).pack(side="left")
         ttk.Radiobutton(pt, text="Salaried", value="Salary", variable=self.v["pay_type"]).pack(side="left",
                                                                                               padx=(12, 0))
+        ttk.Radiobutton(pt, text="Owner", value="Owner", variable=self.v["pay_type"]).pack(side="left", padx=(12, 0))
         r += 1
         self.lbl_basis = ttk.Label(form, text="Salary is")
         self.lbl_basis.grid(row=r, column=0, sticky="w", pady=3)

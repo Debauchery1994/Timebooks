@@ -378,3 +378,12 @@ stored (collect W-9s).
 - When the workbook opens and when the Expenses tab opens, every due one becomes a **Draft** expense (with
   `Expenses.RecurringID`), catching up missed periods; a period that already has an expense from it is never added
   twice. Expenses > Recurring… stops/restarts one (restarting starts from today) or skips its next time. Schema 5.
+
+## Mileage and owners (1.4.0)
+- **Owner** pay type on Employees (`calc.is_owner`): a sole proprietor takes draws, so Pay & Checks never pays owners
+  and annual (1099) statements leave them out; their time cards and history stay.
+- Expenses > **Mileage…**: the `Mileage` sheet (`TripID | Date | PersonID | Person | Purpose | From | To | Miles | Rate |
+  Amount | Notes`); each trip keeps the rate it was logged at (`Company.mileage_rate`, $0.70 default, Company Settings >
+  Pay, "confirm each year"). Amount = miles × rate, cents ROUND_HALF_UP.
+- An expense can be **on a person's account** (`Expenses.PersonID`, e.g. an owner's gas). The Mileage window shows each
+  person's miles, mileage amount and expenses on account for the year (`expenses.account_totals`, drafts left out).

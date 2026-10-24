@@ -423,6 +423,8 @@ def setup_logging() -> None:
 
 def pay_type_label(pay_type: str, salary_basis: str = "Annual") -> str:
     """Display label for the stored PayType value ("Hourly" / "Salary") and, for salaries, its basis."""
+    if (pay_type or "").strip().lower() == "owner":
+        return "Owner"
     if (pay_type or "").strip().lower() != "salary":
         return "Hourly"
     per_period = (salary_basis or "").strip().lower().replace(" ", "") == "perperiod"

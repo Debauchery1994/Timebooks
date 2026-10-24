@@ -192,9 +192,9 @@ the app adds it as a Draft for that period (nothing is counted until approved), 
 rate from Company Settings (labelled "confirm each year with your tax professional"), totals by person and month.
 On the Employees tab a person can be an **Owner**: no payroll checks (a sole proprietor takes draws, not pay), not on
 1099s, but gas, mileage and other expenses can be put **on their account**.
-- [ ] `Mileage` sheet: `TripID | Date | PersonID | Purpose | From | To | Miles | Rate | Amount | Notes`
-- [ ] `Employee.pay_type` "Owner" (Pay & Checks and 1099 totals leave owners out; their history stays)
-- [ ] Expense `PersonID` column ("on whose account"), so gas paid by the owner shows on their account
+- [x] `Mileage` sheet: `TripID | Date | PersonID | Purpose | From | To | Miles | Rate | Amount | Notes`
+- [x] `Employee.pay_type` "Owner" (Pay & Checks and 1099 totals leave owners out; their history stays)
+- [x] Expense `PersonID` column ("on whose account"), so gas paid by the owner shows on their account
 - [ ] Mileage and owner totals feed the 1.7.0 reports
 
 ### C. Bank statements in

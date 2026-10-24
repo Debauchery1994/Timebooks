@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from .. import expenses, receipts_ocr, scanning
-from ..models import Expense
+from ..models import Expense, Trip
 from .common import MONTH_NAMES, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
 from .pin import PinLockable
 
@@ -58,6 +58,13 @@ class ExpenseDialog(ModalDialog):
         self.w["check"].insert(0, str(e.check_number or ""))
         self.w["memo"] = row(7, "Memo", ttk.Entry(f, width=36))
         self.w["memo"].insert(0, e.memo)
+        self.people = [(None, "The business")] + [(p.employee_id, p.display_name) for p in
+                                                   sorted(self.book.employees.values(), key=lambda p: p.display_name)
+                                                   if p.active or p.employee_id == e.person_id]
+        self.w["account"] = row(10, "On whose account", ttk.Combobox(f, values=[n for _i, n in self.people],
+                                                                    state="readonly", width=24))
+        self.w["account"].current(next((i for i, (pid, _n) in enumerate(self.people) if pid == (e.person_id or None)),
+                                       0))
         self.w["repeats"] = ttk.Combobox(f, values=["No"] + list(expenses.REPEATS), state="readonly", width=12)
         linked = next((r for r in self.book.recurring if r.recurring_id == e.recurring_id), None)
         self.w["repeats"].set(linked.every if linked else "No")
@@ -71,7 +78,7 @@ class ExpenseDialog(ModalDialog):
         ttk.Button(rf, text="Attach…", command=self._choose_receipt).pack(side="left", padx=(8, 0))
         row(8, "Receipt", rf)
         ttk.Label(f, text="Amount is the total paid, tax included. Receipts are copied into a Receipts folder next to "
-                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=10, column=0, columnspan=2,
+                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=11, column=0, columnspan=2,
                                                                              sticky="w", pady=(6, 0))
         return self.w["vendor"] if not e.vendor else self.w["amount"]
 
@@ -115,7 +122,8 @@ class ExpenseDialog(ModalDialog):
             payment_method=w["method"].get(), check_number=check if w["method"].get() == "Check" else None,
             memo=w["memo"].get().strip(), receipt_file=self.e.receipt_file, status=self.status,
             vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"),
-            recurring_id=self.e.recurring_id)
+            recurring_id=self.e.recurring_id,
+            person_id=self.people[max(w["account"].current(), 0)][0] or "")
         return True
 
 
@@ -149,11 +157,11 @@ class ReceiptReviewDialog(ExpenseDialog):
             ttk.Label(right, text="choose", style="Warn.TLabel").grid(row=2, column=2, sticky="w", padx=(6, 0))
         warn = ("Couldn't read this receipt automatically; fill it in from the picture." if self.fields is None else
                 "Fields marked \"check this\" weren't read for sure. " + " ".join(self.fields.warnings))
-        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=11, column=0, columnspan=3,
+        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=13, column=0, columnspan=3,
                                                                            sticky="w", pady=(6, 0))
         self.v_draft = tk.BooleanVar(value=False)
         ttk.Checkbutton(right, text="Keep as draft (review later; drafts aren't in the totals)",
-                        variable=self.v_draft).grid(row=12, column=0, columnspan=3, sticky="w", pady=(6, 0))
+                        variable=self.v_draft).grid(row=14, column=0, columnspan=3, sticky="w", pady=(6, 0))
         return first
 
     def _show_picture(self, frame) -> None:
@@ -171,6 +179,148 @@ class ReceiptReviewDialog(ExpenseDialog):
     def apply(self) -> bool:
         self.status = "Draft" if self.v_draft.get() else "Approved"
         return super().apply()
+
+
+class TripDialog(ModalDialog):
+    """Add or edit one trip in the Mileage log."""
+
+    def __init__(self, master, book, trip: Trip):
+        self.book, self.t = book, trip
+        super().__init__(master, "Trip")
+
+    def body(self, f):
+        t = self.t
+        self.people = [(p.employee_id, p.display_name) for p in sorted(self.book.employees.values(),
+                                                                       key=lambda p: p.display_name)
+                       if p.active or p.employee_id == t.person_id]
+        self.w: dict = {}
+        for r, (key, label, width) in enumerate((("date", "Date", 14), ("person", "Who drove", 26),
+                                                  ("purpose", "Business purpose", 34), ("from", "From", 26),
+                                                  ("to", "To", 26), ("miles", "Miles", 10), ("notes", "Notes", 34))):
+            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=3, padx=(0, 10))
+            w = (ttk.Combobox(f, values=[n for _i, n in self.people], state="readonly", width=width)
+                 if key == "person" else ttk.Entry(f, width=width))
+            w.grid(row=r, column=1, sticky="w", pady=3)
+            self.w[key] = w
+        self.w["date"].insert(0, t.trip_date.isoformat())
+        idx = next((i for i, (pid, _n) in enumerate(self.people) if pid == t.person_id), 0)
+        if self.people:
+            self.w["person"].current(idx)
+        for key, val in (("purpose", t.purpose), ("from", t.from_place), ("to", t.to_place), ("notes", t.notes)):
+            self.w[key].insert(0, val)
+        self.w["miles"].insert(0, f"{t.miles:.1f}" if t.miles else "")
+        ttk.Label(f, text=f"At ${t.rate:.3f} a mile (Company Settings > Pay; confirm each year with your tax "
+                  "professional).", style="Muted.TLabel", wraplength=360).grid(row=7, column=0, columnspan=2,
+                                                                              sticky="w", pady=(6, 0))
+        return self.w["purpose"]
+
+    def apply(self) -> bool:
+        w = self.w
+        try:
+            d = parse_date(w["date"].get())
+            miles = parse_money(w["miles"].get() or "0")
+        except ValueError as exc:
+            messagebox.showwarning("Trip", str(exc), parent=self)
+            return False
+        if miles <= 0 or not w["purpose"].get().strip() or not self.people:
+            messagebox.showwarning("Trip", "Enter the business purpose and the miles (add the driver on the Employees "
+                                   "tab first if they aren't listed).", parent=self)
+            return False
+        self.result = Trip(trip_id=self.t.trip_id, trip_date=d, person_id=self.people[w["person"].current()][0],
+                           purpose=w["purpose"].get().strip(), from_place=w["from"].get().strip(),
+                           to_place=w["to"].get().strip(), miles=miles, rate=self.t.rate,
+                           notes=w["notes"].get().strip())
+        return True
+
+
+class MileageDialog(ModalDialog):
+    """The Mileage log for the workbook's year, and each person's account (miles, mileage, expenses on account)."""
+
+    def __init__(self, master, book, app):
+        self.book, self.app = book, app
+        super().__init__(master, "Mileage Log")
+
+    def body(self, f):
+        cols = (("date", "Date", 90), ("person", "Who", 160), ("purpose", "Purpose", 220), ("route", "From → To", 200),
+                ("miles", "Miles", 70), ("amount", "Amount", 90))
+        self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=12)
+        for c, h, w in cols:
+            self.tree.heading(c, text=h)
+            self.tree.column(c, width=w, anchor="e" if c in ("miles", "amount") else "w")
+        style_tree(self.tree)
+        self.tree.pack(fill="both", expand=True)
+        self.tree.bind("<Double-1>", lambda e: self.edit())
+        b = ttk.Frame(f, padding=(0, 8, 0, 4))
+        b.pack(fill="x")
+        ttk.Button(b, text="Add Trip…", style="Accent.TButton", command=self.add).pack(side="left")
+        ttk.Button(b, text="Edit…", command=self.edit).pack(side="left", padx=6)
+        ttk.Button(b, text="Delete", command=self.delete).pack(side="left")
+        ttk.Label(f, text=f"Accounts for {self.book.company.year} (expenses on account leave out drafts)",
+                  style="Muted.TLabel").pack(anchor="w", pady=(8, 2))
+        self.atree = ttk.Treeview(f, columns=("who", "miles", "mileage", "expenses"), show="headings", height=5)
+        for c, h, w in (("who", "Person", 200), ("miles", "Miles", 80), ("mileage", "Mileage", 100),
+                        ("expenses", "Expenses on account", 150)):
+            self.atree.heading(c, text=h)
+            self.atree.column(c, width=w, anchor="w" if c == "who" else "e")
+        style_tree(self.atree)
+        self.atree.pack(anchor="w")
+        self.fill()
+        return self.tree
+
+    def _person_name(self, pid: str) -> str:
+        e = self.book.employees.get(pid)
+        return (e.display_name + ("  (owner)" if (e.pay_type or "").lower() == "owner" else "")) if e else \
+            (pid or "The business")
+
+    def fill(self) -> None:
+        year = self.book.company.year
+        self.tree.delete(*self.tree.get_children())
+        for t in sorted((t for t in self.book.trips if t.trip_date.year == year), key=lambda t: t.trip_date):
+            route = " → ".join(x for x in (t.from_place, t.to_place) if x)
+            who = self._person_name(t.person_id)
+            self.tree.insert("", "end", iid=t.trip_id, values=(f"{t.trip_date:%m/%d/%Y}", who, t.purpose, route,
+                                                               f"{t.miles:.1f}", fmt_money(t.amount)))
+        self.atree.delete(*self.atree.get_children())
+        for pid, (miles, mileage, spent) in sorted(expenses.account_totals(self.book.trips, self.book.expenses,
+                                                                           year).items(),
+                                                  key=lambda kv: self._person_name(kv[0]).lower()):
+            self.atree.insert("", "end", values=(self._person_name(pid), f"{miles:.1f}", fmt_money(mileage),
+                                                 fmt_money(spent)))
+
+    def _sel(self) -> Trip | None:
+        sel = self.tree.selection()
+        return next((t for t in self.book.trips if sel and t.trip_id == sel[0]), None)
+
+    def _edit(self, t: Trip, new: bool) -> None:
+        result = TripDialog(self, self.book, t).show()
+        if result is None:
+            return
+        if new:
+            self.book.trips.append(result)
+        else:
+            self.book.trips[self.book.trips.index(t)] = result
+        self.app.mark_dirty()
+        self.fill()
+
+    def add(self) -> None:
+        rate = Decimal(str(self.book.company.mileage_rate or 0))
+        self._edit(Trip(expenses.next_trip_id(self.book.trips), date.today(), rate=rate), new=True)
+
+    def edit(self) -> None:
+        t = self._sel()
+        if t is not None:
+            self._edit(t, new=False)
+
+    def delete(self) -> None:
+        t = self._sel()
+        if t is not None and messagebox.askyesno("Mileage", f"Delete the trip on {t.trip_date:%m/%d/%Y} "
+                                                 f"({t.miles:.1f} miles)?", parent=self):
+            self.book.trips.remove(t)
+            self.app.mark_dirty()
+            self.fill()
+
+    def apply(self) -> bool:
+        return True
 
 
 class RecurringDialog(ModalDialog):
@@ -266,6 +416,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
         ttk.Button(top, text="Delete", command=self.delete).pack(side="right")
         ttk.Button(top, text="View Receipt", command=self.view_receipt).pack(side="right", padx=6)
         ttk.Button(top, text="Edit…", command=self.edit).pack(side="right")
+        ttk.Button(top, text="Mileage…", command=self.open_mileage).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Recurring…", command=self.manage_recurring).pack(side="right", padx=(6, 0))
         ttk.Button(top, text="Add Expense…", command=self.add).pack(side="right", padx=6)
         scan = ttk.Menubutton(top, text="Scan Receipt ▾", style="Accent.TButton")
@@ -536,6 +687,11 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.app.status(f"{len(drafts)} recurring expense{'s' if len(drafts) != 1 else ''} came due and "
                             f"{'were' if len(drafts) != 1 else 'was'} added as drafts on the Expenses tab.")
         return len(drafts)
+
+    def open_mileage(self) -> None:
+        if self.book is None or self.locked:
+            return
+        MileageDialog(self, self.book, self.app).show()
 
     def manage_recurring(self) -> None:
         if self.book is None or self.locked:

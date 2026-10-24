@@ -46,6 +46,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         ("Pay", "overtime_threshold_weekly", "Overtime after (hrs/week)", "float", None),
         ("Pay", "overtime_multiplier", "Overtime multiplier", "float", None),
         ("Pay", "form_1099_threshold", "1099 review threshold ($)", "float", None),
+        ("Pay", "mileage_rate", "Mileage rate ($ per mile)", "float", None),
         ("Time off", "pto_hours", "PTO day (hours)", "float", None),
         ("Time off", "holiday_hours", "Holiday (hours)", "float", None),
         ("Time off", "sick_hours", "Sick day (hours)", "float", None),
@@ -437,6 +438,8 @@ class CompanyTab(PinLockable, ttk.Frame):
             errors.append("Account number may contain only digits, spaces and dashes.")
         if not 0 <= changes.get("default_lunch_minutes", 0) <= 240:
             errors.append("Default lunch deduct must be 0 to 240 minutes.")
+        if not 0 <= changes.get("mileage_rate", 0.7) <= 5:
+            errors.append("Mileage rate must be between $0 and $5 a mile.")
         if not all(0 <= changes.get(k, 8) <= 24 for k in ("pto_hours", "holiday_hours", "sick_hours")):
             errors.append("PTO, Holiday and Sick day hours must be between 0 and 24.")
         if changes.get("overtime_enabled"):

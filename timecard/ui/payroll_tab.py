@@ -147,7 +147,7 @@ class PayrollTab(PinLockable, ttk.Frame):
         start, end = period
         paid = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
         return {e.employee_id for e in self.book.active_employees()
-                if not is_salaried(e) and e.employee_id not in paid
+                if not is_salaried(e) and not calc.is_owner(e) and e.employee_id not in paid
                 and _has_pay_hours(calc.summarize_hours(self.book.entries_for(e.employee_id, start, end),
                                                         self.book.company, start, end))}
 
@@ -239,6 +239,8 @@ class PayrollTab(PinLockable, ttk.Frame):
         already = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
         no_rate, dups, no_hours = [], [], []
         for emp in self.book.active_employees():
+            if calc.is_owner(emp):   # owners take draws: no payroll checks
+                continue
             entries = self.book.entries_for(emp.employee_id, start, end)
             hours = calc.summarize_hours(entries, self.book.company, start, end)
             if not _has_pay_hours(hours) and not is_salaried(emp):   # salaried people are paid every period

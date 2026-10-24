@@ -61,6 +61,8 @@ def build_statements(book: "TimecardBook", employee_ids: list[str] | None = None
             return None
         if emp_id not in by_id:
             emp = book.employees.get(emp_id) or Employee(emp_id, "", emp_id, active=False)
+            if calc.is_owner(emp):   # owners aren't contractors: no 1099 statement
+                return None
             by_id[emp_id] = AnnualStatement(emp)
         return by_id[emp_id]
 

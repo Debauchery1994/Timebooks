@@ -21,7 +21,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from . import __version__, branding, calc
 from . import expenses as expenses_mod
-from .models import Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry
+from .models import Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
 LOCKED_MSG = "The workbook is open in another program (GridCraft/Excel). Close it and try again."
@@ -49,7 +49,8 @@ PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "sta
                  "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 EXPENSE_HEADERS = ["ExpenseID", "Date", "Vendor", "VendorID", "Category", "Amount", "Tax", "PaymentMethod",
-                   "CheckNumber", "Memo", "ReceiptFile", "Status", "Created", "RecurringID"]
+                   "CheckNumber", "Memo", "ReceiptFile", "Status", "Created", "RecurringID", "PersonID"]
+MILEAGE_HEADERS = ["TripID", "Date", "PersonID", "Person", "Purpose", "From", "To", "Miles", "Rate", "Amount", "Notes"]
 RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMethod", "Memo", "Every", "NextDate",
                      "Active", "Day"]
 
@@ -60,7 +61,7 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   2 = 1.1.2: Employees SalaryBasis, TimeLog SalaryHours / HoursType, pay_hold_back
 #   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
 #   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
-#   5 = 1.4.0: Recurring sheet, Expenses RecurringID
+#   5 = 1.4.0: Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 SCHEMA_VERSION = 5
 META_KEYS = ("schema_version", "app_version")
 
@@ -217,6 +218,7 @@ class TimecardBook:
         self.payroll = []
         self.expenses: list[Expense] = []
         self.recurring: list[Recurring] = []
+        self.trips: list[Trip] = []
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.dirty = False
@@ -320,6 +322,11 @@ class TimecardBook:
                     rec = cls._read_recurring(r)
                     if rec:
                         book.recurring.append(rec)
+            if (ws := sheet("mileage")) is not None:
+                for r in _rows(ws):
+                    trip = cls._read_trip(r)
+                    if trip:
+                        book.trips.append(trip)
             if (ws := sheet("categories")) is not None:
                 cats = [_text(r.get("category")) for r in _rows(ws)]
                 book.categories = [c for c in dict.fromkeys(cats) if c] or list(expenses_mod.DEFAULT_CATEGORIES)
@@ -379,7 +386,8 @@ class TimecardBook:
             last_name=_text(r.get("lastname")),
             address1=_text(r.get("address1")),
             address2=_text(r.get("address2")),
-            pay_type="Salary" if pay_type.lower().startswith("sal") else "Hourly",
+            pay_type="Salary" if pay_type.lower().startswith("sal") else "Owner" if pay_type.lower() == "owner"
+            else "Hourly",
             pay_rate=calc.money(_to_decimal(r.get("payrate"))),
             active=_to_bool(r.get("active"), default=True),
             notes=_text(r.get("notes")),
@@ -418,7 +426,17 @@ class TimecardBook:
             tax=calc.money(_to_decimal(r.get("tax"))), payment_method=_text(r.get("paymentmethod")) or "Other",
             check_number=check or None, memo=_text(r.get("memo")), receipt_file=_text(r.get("receiptfile")),
             status=status if status in expenses_mod.STATUSES else "Approved", created=_text(r.get("created")),
-            recurring_id=_text(r.get("recurringid")))
+            recurring_id=_text(r.get("recurringid")), person_id=_text(r.get("personid")))
+
+    @staticmethod
+    def _read_trip(r: dict[str, Any]) -> Trip | None:
+        trip_id, d = _text(r.get("tripid")), _to_date(r.get("date"))
+        if not trip_id or d is None:
+            return None
+        return Trip(trip_id=trip_id, trip_date=d, person_id=_text(r.get("personid")), purpose=_text(r.get("purpose")),
+                    from_place=_text(r.get("from")), to_place=_text(r.get("to")),
+                    miles=calc.money(_to_decimal(r.get("miles"))), rate=_to_decimal(r.get("rate")),
+                    notes=_text(r.get("notes")))
 
     @staticmethod
     def _read_recurring(r: dict[str, Any]) -> Recurring | None:
@@ -530,6 +548,7 @@ class TimecardBook:
         self._write_expenses(wb.create_sheet("Expenses"))
         self._write_categories(wb.create_sheet("Categories"))
         self._write_recurring(wb.create_sheet("Recurring"))
+        self._write_mileage(wb.create_sheet("Mileage"))
         if self.logo_png:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -590,8 +609,16 @@ class TimecardBook:
         for e in sorted(self.expenses, key=lambda e: (e.expense_date, e.expense_id)):
             ws.append([e.expense_id, e.expense_date, e.vendor, e.vendor_id, e.category, float(e.amount), float(e.tax),
                        e.payment_method, e.check_number, e.memo, e.receipt_file, e.status, e.created,
-                       e.recurring_id])
+                       e.recurring_id, e.person_id])
             _fmt_row(ws, ws.max_row, {2: FMT_DATE, 6: FMT_MONEY, 7: FMT_MONEY})
+
+    def _write_mileage(self, ws: Worksheet) -> None:
+        _write_header(ws, MILEAGE_HEADERS, [10, 12, 10, 22, 30, 20, 20, 9, 8, 11, 30])
+        for t in sorted(self.trips, key=lambda t: (t.trip_date, t.trip_id)):
+            emp = self.employees.get(t.person_id)
+            ws.append([t.trip_id, t.trip_date, t.person_id, emp.display_name if emp else "", t.purpose, t.from_place,
+                       t.to_place, float(t.miles), float(t.rate), float(t.amount), t.notes])
+            _fmt_row(ws, ws.max_row, {2: FMT_DATE, 9: "$0.000", 10: FMT_MONEY})
 
     def _write_recurring(self, ws: Worksheet) -> None:
         _write_header(ws, RECURRING_HEADERS, [10, 24, 20, 12, 14, 30, 11, 12, 8, 6])
