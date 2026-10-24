@@ -10,7 +10,7 @@ You review changes to TimeCard Pro (repo root: this project). You do not edit fi
 A Windows desktop app (Python 3.15, tkinter) for a small business: time cards, contractor payroll, check printing,
 annual statements. All data lives in one `.xlsx` workbook per business per year (openpyxl), readable in GridCraft.
 Read `DESIGN.md` first: it is the contract (workbook schema, business rules, check layouts, security rules).
-`docs/PLAYBOOK.md` is the roadmap.
+`docs/ROADMAP.md` is the roadmap.
 
 ## Rules that must never break (highest severity if they do)
 1. **Pay rates are never shown on screen or printed** (not on checks, stubs, memos, time cards, statements, logs).
