@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro into **TimeBooks**, a small-business b
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
-_Last updated: 2026-10-24 · published: 1.2.0 · in progress: 1.3.0 (part 3 of 3) · next: 1.4.0_
+_Last updated: 2026-10-24 · published: 1.2.0 · ready to publish: 1.3.0 · next: 1.4.0_
 
 ---
 
@@ -227,6 +227,8 @@ takes photos of receipts, and they arrive as Drafts. No app to install and nothi
       one-time code in the address; pictures go to the scanner-folder flow
 - [x] Windows Firewall will ask the first time; explain it in the window. If a PC blocks it, the scanner folder
       (e.g. a phone's OneDrive/Google Photos sync folder) is the fallback
+
+- [x] Pre-release review (part 3): all findings fixed; installer built (`release-builds/1.3.0/`)
 
 **Part 3 is done when** a real bank statement (CSV and PDF) matches against the expenses and a phone photo arrives
 as a draft.
