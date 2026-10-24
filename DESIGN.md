@@ -248,3 +248,16 @@ stored (collect W-9s).
   and writes it to settings.json as `last_workbook` + top of Recent Files, so the app opens it on first launch.
   If settings already point at a workbook that exists, Setup shows it as kept and asks nothing.
   Silent installs: `--company "Name"`.
+
+## Autosave, pay timing and the Company Settings lock
+- **Autosave** (File → Save automatically, default on, `settings.json` `autosave`): every `mark_dirty` schedules a save
+  2 s later. A locked file (open in GridCraft/Excel) only shows a status-bar error and retries every 30 s. Autosaves don't
+  make backup copies; one is made when the workbook is closed or another is opened. With autosave on, closing saves
+  instead of asking.
+- **Pay timing** (`Company.pay_hold_back`, Company Settings → Pay): `none` (default) = Pay & Checks opens on the pay
+  period containing today; `one` = hold one pay period back and open on the period before it. Until the user picks a
+  period, opening the tab re-applies this. Calculate names hourly people skipped for having no hours in the period when
+  they have unpaid hours in another one.
+- **Company Settings is behind the PIN** like Employees (bank routing/account numbers live there): same LockOverlay,
+  the settings form is removed from the layout while locked, it relocks when the tab is left, on the 5-minute idle
+  lock and from File → Lock Employees and Company Settings.

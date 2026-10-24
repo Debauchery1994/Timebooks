@@ -20,6 +20,9 @@ class Company:
     next_check_number: int = 1001
     pay_period: str = "Weekly"  # Weekly | Biweekly | Semimonthly | Monthly
     week_start: str = "Monday"  # Monday | Sunday
+    # Which period Pay & Checks pays by default: "none" = the current pay period; "one" = hold one pay period
+    # back (pay the period that has ended, as businesses that keep a week in hand do).
+    pay_hold_back: str = "none"
     default_lunch_minutes: int = 30
     # Team members are paid as independent contractors: no overtime premium and no withholding
     # by default. The settings stay so a business can turn them on.

@@ -1438,11 +1438,14 @@ class SecurityQuestionDialog(ModalDialog):
 
 
 class LockOverlay(ttk.Frame):
-    """Covers the Employees tab until the PIN is entered (or created, if none is set yet)."""
+    """Covers a protected tab (Employees, Company Settings) until the PIN is entered (or created, if none is
+    set yet). `what` names the protected records; `purpose` finishes "Enter the PIN to ..."."""
 
-    def __init__(self, master, on_unlock):
+    def __init__(self, master, on_unlock, what: str = "Employee records",
+                 purpose: str = "view or edit team members"):
         super().__init__(master, padding=40)
         self.on_unlock = on_unlock
+        self.what, self.purpose = what, purpose
         self.fails = 0
         self.locked_until = 0.0
         self.inner = ttk.Frame(self)
@@ -1461,10 +1464,10 @@ class LockOverlay(ttk.Frame):
         create = not security.has_pin()
         self.mode = "create" if create else "unlock"
         ttk.Label(self.inner, text="\U0001F512", style="Icon.TLabel").pack()
-        ttk.Label(self.inner, text="Create a PIN to protect employee records" if create
-                  else "Employee records are locked", style="LockTitle.TLabel").pack(pady=(4, 2))
+        ttk.Label(self.inner, text=f"Create a PIN to protect {self.what.lower()}" if create
+                  else f"{self.what} are locked", style="LockTitle.TLabel").pack(pady=(4, 2))
         hint = (f"Choose a {security.MIN_LEN}-{security.MAX_LEN} digit PIN. You will need it to open this tab."
-                if create else "Enter the PIN to view or edit team members.")
+                if create else f"Enter the PIN to {self.purpose}.")
         ttk.Label(self.inner, text=hint, style="Muted.TLabel").pack(pady=(0, 12))
         form = ttk.Frame(self.inner)
         form.pack()
@@ -2382,13 +2385,13 @@ class PayrollTab(ttk.Frame):
         self.on_period_change()
 
     def _default_period_index(self) -> int:
-        """The period that just ended (the one usually being paid), unless it has no unpaid hours and the
-        current period does - e.g. in the first week of using the app."""
+        """The pay period containing today, or the one before it when the company holds a period back
+        (Company Settings > Pay timing)."""
         today = date.today()
         idx = period_index_for(self.periods, today)
-        if idx > 0 and self.periods[idx][0] <= today <= self.periods[idx][1]:
-            if self._unpaid_hourly(self.periods[idx - 1]) or not self._unpaid_hourly(self.periods[idx]):
-                idx -= 1
+        held_back = (self.book.company.pay_hold_back or "").strip().lower() == "one"
+        if held_back and idx > 0 and self.periods[idx][0] <= today <= self.periods[idx][1]:
+            idx -= 1
         return idx
 
     def _unpaid_hourly(self, period: tuple[date, date]) -> set[str]:
@@ -2775,6 +2778,9 @@ class CompanyTab(ttk.Frame):
         ("Pay", "year", "Year", "readonly", None),
         ("Pay", "pay_period", "Pay period", "choice", list(calc.PAY_PERIODS)),
         ("Pay", "week_start", "Week starts on", "choice", list(calc.WEEK_STARTS)),
+        ("Pay", "pay_hold_back", "Pay timing", "radio",
+         [("none", "Pay the current pay period (no hold-back)"),
+          ("one", "Hold one pay period back (e.g. pay last week's hours this week)")]),
         ("Pay", "default_lunch_minutes", "Default lunch deduct (min)", "int", None),
         ("Pay", "next_check_number", "Next check number", "int", None),
         ("Pay", "overtime_enabled", "Overtime", "bool", "Overtime enabled"),
@@ -2811,7 +2817,7 @@ class CompanyTab(ttk.Frame):
         self.manual_widgets: list[tk.Widget] = []
         self.v_show = tk.BooleanVar(value=False)
 
-        sf = ScrollFrame(self)
+        sf = self.sf = ScrollFrame(self)
         sf.pack(fill="both", expand=True)
         body = sf.inner
         frames: dict[str, ttk.Frame] = {}
@@ -2920,10 +2926,31 @@ class CompanyTab(ttk.Frame):
                   style="Muted.TLabel", wraplength=360).grid(row=rows["Checks"], column=0, columnspan=2,
                                                              sticky="w", pady=(8, 0))
         self._update_layout_state()
-        btns = ttk.Frame(self, padding=(0, 10, 0, 0))
+        btns = self.btns = ttk.Frame(self, padding=(0, 10, 0, 0))
         btns.pack(fill="x")
         ttk.Button(btns, text="Save Settings", style="Accent.TButton", command=self.save).pack(side="right")
         ttk.Button(btns, text="Revert", command=self.refresh).pack(side="right", padx=6)
+        self.locked = False
+        self.overlay = LockOverlay(self, self.unlock, what="Company settings",
+                                   purpose="view or change company, bank and check settings")
+        self.lock()
+
+    # ----- PIN lock (bank account and routing numbers live here)
+    def lock(self) -> None:
+        """Take the settings off the screen (not just covered, so Tab can't reach them) behind the PIN."""
+        self.locked = True
+        self.sf.pack_forget()
+        self.btns.pack_forget()
+        self.overlay.show()
+
+    def unlock(self) -> None:
+        self.locked = False
+        self.overlay.place_forget()
+        self.sf.pack(fill="both", expand=True)
+        self.btns.pack(fill="x")
+        self.refresh()
+        self.app.note_activity()
+        self.app.status("Company settings unlocked. They lock again when you leave this tab.")
 
     @property
     def book(self):
@@ -3068,7 +3095,7 @@ class CompanyTab(ttk.Frame):
             self._toggle_advanced()   # show non-zero withholding so it isn't hidden
 
     def save(self) -> None:
-        if self.book is None:
+        if self.book is None or self.locked:
             return
         c = self.book.company
         changes = {}
@@ -3458,7 +3485,7 @@ class App(tk.Tk):
         fm.add_separator()
         fm.add_command(label="Change PIN\u2026", command=self.change_pin)
         fm.add_command(label="Change Security Question\u2026", command=self.change_security_question)
-        fm.add_command(label="Lock Employee Records", command=self.lock_employees)
+        fm.add_command(label="Lock Employees and Company Settings", command=self.lock_employees)
         fm.add_separator()
         fm.add_command(label="Exit", command=self.exit)
         menubar.add_cascade(label="File", menu=fm)
@@ -3680,10 +3707,11 @@ class App(tk.Tk):
             return
         self.commit_pending()
         current = self.nb.nametowidget(self.nb.select())
-        if current is not self.employees_tab and not self.employees_tab.locked:
-            self.employees_tab.lock()
-        if current is self.employees_tab and self.employees_tab.locked:
-            self.employees_tab.overlay.focus_pin()
+        for tab in self.pin_tabs:
+            if current is not tab and not tab.locked:
+                tab.lock()
+        if current in self.pin_tabs and current.locked:
+            current.overlay.focus_pin()
         if current is self.yearlog_tab:
             self.yearlog_tab.reload()
         elif current is self.payroll_tab:
@@ -3699,15 +3727,23 @@ class App(tk.Tk):
     def note_activity(self, _e=None) -> None:
         self._last_activity = _time.monotonic()
 
+    @property
+    def pin_tabs(self) -> tuple:
+        """Tabs behind the PIN."""
+        return self.employees_tab, self.company_tab
+
     def _idle_check(self) -> None:
-        if not self.employees_tab.locked and _time.monotonic() - self._last_activity >= IDLE_LOCK_SECONDS:
-            self.employees_tab.lock()
-            self.status("Employee records locked after 5 minutes of inactivity.")
+        open_tabs = [t for t in self.pin_tabs if not t.locked]
+        if open_tabs and _time.monotonic() - self._last_activity >= IDLE_LOCK_SECONDS:
+            for tab in open_tabs:
+                tab.lock()
+            self.status("Employee records and company settings locked after 5 minutes of inactivity.")
         self._idle_job = self.after(10_000, self._idle_check)
 
     def lock_employees(self) -> None:
-        self.employees_tab.lock()
-        self.status("Employee records locked.")
+        for tab in self.pin_tabs:
+            tab.lock()
+        self.status("Employee records and company settings locked.")
 
     def change_pin(self) -> None:
         if not security.has_pin():
