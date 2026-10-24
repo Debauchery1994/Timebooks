@@ -33,7 +33,7 @@ FMT_MONEY = "$#,##0.00"
 FMT_HOURS = "0.00"
 
 EMPLOYEE_HEADERS = ["EmployeeID", "FirstName", "LastName", "Address1", "Address2",
-                    "PayType", "PayRate", "Active", "Notes", "SalaryBasis"]
+                    "PayType", "PayRate", "Active", "Notes", "SalaryBasis", "ClockPin", "W9OnFile", "W9Date"]
 TIMELOG_HEADERS = ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
                    "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType", "In3", "Out3"]
 PAYROLL_HEADERS = ["CheckNumber", "CheckDate", "PeriodStart", "PeriodEnd", "EmployeeID", "Employee",
@@ -62,7 +62,7 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
 #   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
-#   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair)
+#   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair); Employees ClockPin / W9OnFile / W9Date; clock_* settings
 SCHEMA_VERSION = 6
 META_KEYS = ("schema_version", "app_version")
 
@@ -395,6 +395,9 @@ class TimecardBook:
             active=_to_bool(r.get("active"), default=True),
             notes=_text(r.get("notes")),
             salary_basis="Per Period" if basis.startswith("per") else "Annual",  # missing column: yearly
+            clock_pin=_text(r.get("clockpin")),
+            w9_on_file=_to_bool(r.get("w9onfile")),
+            w9_date=_to_date(r.get("w9date")),
         )
 
     @staticmethod
@@ -570,13 +573,16 @@ class TimecardBook:
                 row[1].number_format = "@"
 
     def _write_employees(self, ws: Worksheet) -> None:
-        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30, 12])
+        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30, 12, 14, 10, 12])
         for emp in sorted(self.employees.values(), key=lambda e: e.employee_id):
             ws.append([emp.employee_id, emp.first_name, emp.last_name, emp.address1, emp.address2,
                        emp.pay_type, float(calc.money(emp.pay_rate)),
                        "Yes" if emp.active else "No", emp.notes,
                        ("Per Period" if calc.salary_is_per_period(emp) else "Annual")
-                       if emp.pay_type.strip().lower() == "salary" else ""])
+                       if emp.pay_type.strip().lower() == "salary" else "",
+                       emp.clock_pin, "Yes" if emp.w9_on_file else "No", emp.w9_date])
+            if emp.w9_date:
+                ws.cell(ws.max_row, 13).number_format = FMT_DATE
             _fmt_row(ws, ws.max_row, {7: FMT_MONEY})
 
     def _write_timelog(self, ws: Worksheet) -> None:

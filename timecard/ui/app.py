@@ -18,7 +18,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ..models import Company
-from .. import APP_NAME, __version__, backup, branding, calc, paths, security, updates
+from .. import APP_NAME, __version__, backup, branding, calc, paths, phone_upload, security, timeclock, updates
 from ..storage import TimecardBook, WorkbookError
 from .common import (
     AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P,
@@ -106,6 +106,8 @@ class App(tk.Tk):
 
         self._update_thread: threading.Thread | None = None
         self._autosave_job: str | None = None
+        self.clock: timeclock.ClockServer | None = None   # the phone clock-in page, while turned on
+        self._clock_job: str | None = None
         self._unbacked_autosave = False   # auto-saves since the last backup (backed up when closing)
         self._autosave_failed = False     # last attempt failed (status bar shows an error)
         self._autosave_paused = False     # file changed outside the app: wait for the user
@@ -470,6 +472,7 @@ class App(tk.Tk):
         self.refresh_all(keep_selection=False)
         self.refresh_branding()
         self.apply_features()
+        self.apply_clock()
         self.expenses_tab.add_due_recurring()
         self.apply_pin_locks(lock_current=True)
         if book.path:
@@ -520,6 +523,62 @@ class App(tk.Tk):
     # ----- PIN / idle lock
     def note_activity(self, _e=None) -> None:
         self._last_activity = _time.monotonic()
+
+    # ----- phone clock-in
+    def apply_clock(self) -> None:
+        """Run the phone clock-in page while a workbook that has it turned on is open (and stop it otherwise)."""
+        if self.clock is not None:
+            self.clock.stop()
+            self.clock = None
+        c = self.book.company if self.book is not None else None
+        if c is None or not c.clock_enabled or not c.use_timecards:
+            return
+        if not c.clock_code:
+            c.clock_code = timeclock.new_code()
+            self.mark_dirty()
+        try:
+            self.clock = timeclock.ClockServer(phone_upload.local_ip(), int(c.clock_port or 8770), c.clock_code,
+                                               c.company_name).start()
+        except OSError as exc:
+            log.warning("Phone clock-in could not start: %s", exc)
+            self.status(f"Phone clock-in couldn't start (port {c.clock_port} may be in use; change it in Company "
+                        "Settings).", error=True)
+            return
+        log.info("Phone clock-in at %s:%s", self.clock.host, self.clock.port)
+        if self._clock_job is None:
+            self._clock_job = self.after(300, self._clock_poll)
+
+    def _clock_poll(self) -> None:
+        self._clock_job = None
+        if self.clock is None:
+            return
+        if self.clock.stopped:
+            if self.clock.stopped_reason:
+                self.status(self.clock.stopped_reason, error=True)
+            self.clock = None
+            return
+        self.clock.serve_pending(self._clock_punch)
+        self._clock_job = self.after(300, self._clock_poll)
+
+    def _clock_punch(self, pin: str) -> tuple[bool, str]:
+        """A PIN from the clock-in page: record the person's next In / Out for today."""
+        if self.book is None:
+            return False, "TimeBooks has no workbook open."
+        person = next((e for e in self.book.active_employees()
+                       if e.clock_pin and timeclock.check_clock_pin(pin, e.clock_pin)), None)
+        if person is None:
+            return False, "That PIN wasn't recognised."
+        now = datetime.now()
+        new, what = timeclock.punch(self.book.get_entry(person.employee_id, now.date()), now)
+        if new is None:
+            return True, f"{person.full_name}: {what}"
+        self.book.set_entry(new)
+        self.mark_dirty()
+        self.timecard_tab.refresh()
+        msg = f"{person.full_name}: clocked {what} at {now:%I:%M %p}".replace(" 0", " ")
+        self.status(f"{msg} (phone).")
+        log.info("Phone clock-in: %s %s", person.employee_id, what)
+        return True, msg
 
     def apply_features(self) -> None:
         """Show the tabs of the features the business uses (Company Settings > Features) and hide the rest; a hidden
@@ -956,6 +1015,9 @@ class App(tk.Tk):
 
     def _close(self) -> None:
         """Remember the window state and close (the caller has already dealt with unsaved changes)."""
+        if self.clock is not None:
+            self.clock.stop()
+            self.clock = None
         self._backup_after_autosaves()
         try:
             zoomed = self.state() == "zoomed"

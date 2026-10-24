@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import dataclasses
 import tkinter as tk
+from datetime import date
 from decimal import Decimal
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
 from ..models import Employee
-from .. import calc, statements
+from .. import calc, statements, timeclock
 from ..storage import TimecardBook
-from .common import F, ModalDialog, is_salaried, open_file, parse_money, pay_type_label, salary_amount_text, style_tree
+from .common import (
+    F, ModalDialog, is_salaried, open_file, parse_date, parse_money, pay_type_label, salary_amount_text, style_tree,
+)
 from .dialogs import BackupDialog, ExportStatementsDialog
 from .pin import PinLockable
 
@@ -73,6 +76,45 @@ class PayRateDialog(ModalDialog):
         self.e1.delete(0, "end")
         self.e2.delete(0, "end")
         self.result = True
+        return True
+
+
+class ClockPinDialog(ModalDialog):
+    """Set (or remove) a person's 4-digit phone clock-in PIN. result = the hashed PIN, "" to remove, None = cancel."""
+
+    def __init__(self, master, emp: Employee, others: list[Employee]):
+        self.emp, self.others = emp, others
+        super().__init__(master, f"Clock PIN: {emp.full_name}")
+
+    def body(self, f):
+        ttk.Label(f, text=f"{self.emp.full_name} types this on their phone to clock in and out (Company Settings > "
+                  "Phone clock-in). 4 digits; each person's must be different.", style="Muted.TLabel",
+                  wraplength=360).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.e1 = ttk.Entry(f, show="\u2022", width=8, justify="center")
+        self.e2 = ttk.Entry(f, show="\u2022", width=8, justify="center")
+        for r, (label, e) in enumerate((("Clock PIN", self.e1), ("Again", self.e2)), start=1):
+            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=3, padx=(0, 10))
+            e.grid(row=r, column=1, sticky="w", pady=3)
+        self.v_clear = tk.BooleanVar(value=False)
+        if self.emp.clock_pin:
+            ttk.Checkbutton(f, text="Remove this person's clock PIN", variable=self.v_clear).grid(
+                row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        return self.e1
+
+    def apply(self) -> bool:
+        if self.v_clear.get():
+            self.result = ""
+            return True
+        pin = self.e1.get().strip()
+        err = timeclock.validate_clock_pin(pin)
+        if err is None and pin != self.e2.get().strip():
+            err = "The two PINs don't match."
+        if err is None and any(o.clock_pin and timeclock.check_clock_pin(pin, o.clock_pin) for o in self.others):
+            err = "Someone else already uses that PIN. Choose another."
+        if err:
+            messagebox.showwarning("Clock PIN", err, parent=self)
+            return False
+        self.result = timeclock.hash_clock_pin(pin)
         return True
 
 
@@ -155,6 +197,15 @@ class EmployeesTab(PinLockable, ttk.Frame):
                              wrap="word")
         self.notes.grid(row=r, column=1, sticky="ew", pady=3)
         r += 1
+        self.v_w9 = tk.BooleanVar(value=False)
+        self.v_w9_date = tk.StringVar(value="")
+        w9 = ttk.Frame(form)
+        ttk.Checkbutton(w9, text="W-9 on file", variable=self.v_w9).pack(side="left")
+        ttk.Label(w9, text="  dated").pack(side="left")
+        ttk.Entry(w9, textvariable=self.v_w9_date, width=12).pack(side="left", padx=(4, 0))
+        ttk.Label(form, text="Tax form").grid(row=r, column=0, sticky="w", pady=3)
+        w9.grid(row=r, column=1, sticky="w", pady=3)
+        r += 1
         self.v_rate = tk.StringVar(value="Rate on file: -")
         ttk.Label(form, textvariable=self.v_rate, style="Muted.TLabel").grid(row=r, column=1, sticky="w", pady=(6, 0))
         r += 1
@@ -169,6 +220,9 @@ class EmployeesTab(PinLockable, ttk.Frame):
         r += 1
         ttk.Button(form, text="Set Pay Rate\u2026", command=self.set_pay_rate).grid(row=r, column=0, columnspan=2,
                                                                                 sticky="ew", pady=(8, 0))
+        r += 1
+        ttk.Button(form, text="Set Clock PIN\u2026", command=self.set_clock_pin).grid(row=r, column=0, columnspan=2,
+                                                                                  sticky="ew", pady=(8, 0))
         self.clear_form()
 
     def open_backup(self) -> None:
@@ -263,7 +317,10 @@ class EmployeesTab(PinLockable, ttk.Frame):
         self.v_status.set("Active" if e.active else "No longer with the company (records kept)")
         self.notes.delete("1.0", "end")
         self.notes.insert("1.0", e.notes)
-        self.v_rate.set("Rate on file: " + ("Yes" if self.book.has_pay_rate(e.employee_id) else "No"))
+        self.v_rate.set("Rate on file: " + ("Yes" if self.book.has_pay_rate(e.employee_id) else "No")
+                        + "   Clock PIN: " + ("set" if e.clock_pin else "none"))
+        self.v_w9.set(e.w9_on_file)
+        self.v_w9_date.set(e.w9_date.isoformat() if e.w9_date else "")
         self.btn_deact.configure(text="No Longer With Company" if e.active else "Reactivate")
 
     def clear_form(self) -> None:
@@ -279,6 +336,8 @@ class EmployeesTab(PinLockable, ttk.Frame):
         self.v_status.set("Active")
         self.notes.delete("1.0", "end")
         self.v_rate.set("Rate on file: -")
+        self.v_w9.set(False)
+        self.v_w9_date.set("")
         self.btn_deact.configure(text="No Longer With Company")
 
     def _show_basis(self) -> None:
@@ -294,10 +353,20 @@ class EmployeesTab(PinLockable, ttk.Frame):
         if not first and not last:
             messagebox.showwarning("Employees", "Enter at least a first or last name.", parent=self)
             return None
+        w9_date = None
+        if self.v_w9_date.get().strip():
+            try:
+                w9_date = parse_date(self.v_w9_date.get())
+            except ValueError as exc:
+                messagebox.showwarning("Employees", f"W-9 date: {exc}", parent=self)
+                return None
+        elif self.v_w9.get():
+            w9_date = date.today()
         return dict(first_name=first, last_name=last, address1=self.v["address1"].get().strip(),
                     address2=self.v["address2"].get().strip(), pay_type=self.v["pay_type"].get() or "Hourly",
                     salary_basis=self.v["salary_basis"].get() or "Annual",
-                    active=bool(self.v_active.get()), notes=self.notes.get("1.0", "end").strip())
+                    active=bool(self.v_active.get()), notes=self.notes.get("1.0", "end").strip(),
+                    w9_on_file=bool(self.v_w9.get()), w9_date=w9_date if self.v_w9.get() else None)
 
     def add(self) -> None:
         vals = self._form_values()
@@ -373,6 +442,20 @@ class EmployeesTab(PinLockable, ttk.Frame):
         self.app.refresh_employees()
         self.app.status(f"{cur.full_name} " + ("is marked as no longer with the company (records kept)."
                                                if cur.active else "has been reactivated."))
+
+    def set_clock_pin(self) -> None:
+        if self.selected is None:
+            messagebox.showinfo("Clock PIN", "Select an employee first.", parent=self)
+            return
+        emp = self.book.employees[self.selected]
+        others = [e for e in self.book.employees.values() if e.active and e.employee_id != emp.employee_id]
+        result = ClockPinDialog(self, emp, others).show()
+        if result is None:
+            return
+        self.book.upsert_employee(dataclasses.replace(emp, clock_pin=result))
+        self.app.mark_dirty()
+        self.app.refresh_employees()
+        self.app.status(f"Clock PIN {'set' if result else 'removed'} for {emp.full_name}.{self.app.save_hint()}")
 
     def set_pay_rate(self) -> None:
         if self.selected is None:

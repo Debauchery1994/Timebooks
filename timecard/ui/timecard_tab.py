@@ -15,6 +15,7 @@ from ..storage import TimecardBook
 from .common import (
     F, FlowFrame, ScrollFrame, fmt_hours, fmt_period, is_salaried, open_file, paint_cell, period_index_for, set_invalid,
 )
+from .clock_dialog import ClockQrDialog
 from .pin import PinLockable
 
 if TYPE_CHECKING:
@@ -78,6 +79,7 @@ class TimeCardTab(PinLockable, ttk.Frame):
         a2 = actions.group()
         ttk.Button(a2, text="Print time card", style="Accent.TButton",
                    command=self.print_timecard).pack(side="left")
+        ttk.Button(a2, text="Clock-in QR…", command=self.show_clock_qr).pack(side="left", padx=6)
         ttk.Label(self, text="Type times like 8, 830a, 5:15 pm or 17:15. Tab / Enter moves to the next cell.",
                   style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
         self.v_salary_hint = tk.StringVar(value="")   # set in rebuild() for salaried people
@@ -192,6 +194,11 @@ class TimeCardTab(PinLockable, ttk.Frame):
             self.cb_period.current(idx)
         self.rebuild()
         self.focus_date(d)
+
+    def show_clock_qr(self) -> None:
+        if self.book is None or self.locked:
+            return
+        ClockQrDialog(self, self.app)
 
     def focus_date(self, d: date) -> None:
         if self.locked:   # never put the keyboard in a tab that is behind the PIN screen

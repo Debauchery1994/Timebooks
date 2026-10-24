@@ -70,7 +70,7 @@ class SalaryBasisStorageTests(unittest.TestCase):
         self.assertEqual(loaded.employees["E002"].salary_basis, "Annual")
         ws = openpyxl.load_workbook(self.path)["Employees"]
         headers = [c.value for c in ws[1]]
-        self.assertEqual(headers[-1], "SalaryBasis")
+        self.assertIn("SalaryBasis", headers)
         col = headers.index("SalaryBasis")
         self.assertEqual([r[col] for r in ws.iter_rows(min_row=2, values_only=True)],
                          ["Per Period", "Annual", None])   # blank for hourly

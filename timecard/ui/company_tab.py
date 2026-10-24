@@ -47,6 +47,8 @@ class CompanyTab(PinLockable, ttk.Frame):
         ("Pay", "overtime_multiplier", "Overtime multiplier", "float", None),
         ("Pay", "form_1099_threshold", "1099 review threshold ($)", "float", None),
         ("Pay", "mileage_rate", "Mileage rate ($ per mile)", "float", None),
+        ("Pay", "clock_enabled", "Phone clock-in", "bool", "Clock in / out from a phone (QR on the Time Card tab)"),
+        ("Pay", "clock_port", "Clock-in port", "int", None),
         ("Time off", "pto_hours", "PTO day (hours)", "float", None),
         ("Time off", "holiday_hours", "Holiday (hours)", "float", None),
         ("Time off", "sick_hours", "Sick day (hours)", "float", None),
@@ -438,6 +440,8 @@ class CompanyTab(PinLockable, ttk.Frame):
             errors.append("Account number may contain only digits, spaces and dashes.")
         if not 0 <= changes.get("default_lunch_minutes", 0) <= 240:
             errors.append("Default lunch deduct must be 0 to 240 minutes.")
+        if changes.get("clock_enabled") and not 1024 <= changes.get("clock_port", 8770) <= 65535:
+            errors.append("Clock-in port must be between 1024 and 65535.")
         if not 0 <= changes.get("mileage_rate", 0.7) <= 5:
             errors.append("Mileage rate must be between $0 and $5 a mile.")
         if not all(0 <= changes.get(k, 8) <= 24 for k in ("pto_hours", "holiday_hours", "sick_hours")):
@@ -489,6 +493,7 @@ class CompanyTab(PinLockable, ttk.Frame):
             self.app.refresh_branding()
             self.app.apply_features()
             self.app.apply_pin_locks()
+            self.app.apply_clock()
             self.app.status(f"Company settings updated.{self.app.save_hint()}")
         else:
             self.app.status("No changes to company settings.")

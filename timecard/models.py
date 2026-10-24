@@ -51,6 +51,10 @@ class Company:
     use_timecards: bool = True   # Time Card and Year Log (hourly pay comes from these hours)
     use_payroll: bool = True     # Pay & Checks
     use_expenses: bool = False   # Expenses (money spent, with receipts)
+    # Phone clock-in (Company Settings): the page's port and the secret part of its address (in the printed QR code).
+    clock_enabled: bool = False
+    clock_port: int = 8770
+    clock_code: str = ""
     # Tabs the owner has put behind the PIN (Company Settings > Locked by PIN). Company Settings itself is always
     # locked, since these switches live there. There is one PIN for the whole app, set up when it was installed.
     lock_timecard: bool = False
@@ -90,6 +94,9 @@ class Employee:
     # Salary only: what pay_rate means. "Annual" = yearly salary (each check is a share of it);
     # "Per Period" = the amount of every check.
     salary_basis: str = "Annual"
+    clock_pin: str = ""        # 4-digit phone clock-in PIN, stored hashed (timeclock.hash_clock_pin); "" = none
+    w9_on_file: bool = False   # a signed W-9 is on file (kept on paper; no tax IDs stored here)
+    w9_date: date | None = None
 
     @property
     def display_name(self) -> str:
