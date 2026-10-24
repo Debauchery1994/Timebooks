@@ -353,3 +353,71 @@ and totals, same as the other tabs.
 _Moved out of the parking lot 2026-10-24:_ bank statement import (1.3.0), mileage log and owners as a pay group
 (1.3.0), recurring expenses (1.3.0), phone photo upload (1.3.0), positive pay (1.4.0), invoices (1.5.0),
 several businesses (2.0.0).
+
+### Suggestions to decide (2026-10-24)
+
+Answer each with **yes / no** and any comment in the brackets at the end, like last time; the yes items get placed
+into releases. _Rec_ is my recommendation: **must** (a gap a bookkeeping app will feel), **good** (clear value, fits
+the plan), **later** (nice, but wait for a need).
+
+**Everyday use**
+- **Home tab / dashboard**: this month's money in and out, drafts waiting for review, recurring bills coming due,
+  last backup, uncashed checks. One glance on opening the app. _Rec: good._ [ ]
+- **Reminders**: drafts waiting, a recurring bill due, quarterly tax dates, "no backup in 7 days", 1099 season.
+  Shown on the home tab / status bar, never pop-ups. _Rec: good._ [ ]
+- **Search everywhere** (Ctrl+F): find a vendor, amount, check number or person across expenses, checks, trips and
+  time cards. _Rec: good._ [ ]
+- **Duplicate check**: warn when a new expense or scanned receipt matches one already entered (same vendor, amount,
+  close date), common with phone photos plus bank imports. _Rec: must._ [ ]
+- **Split an expense** across categories (one Costco receipt: supplies + office + meals). _Rec: good._ [ ]
+- **Text PDFs read directly** (emailed receipts and invoices): use the PDF's own text instead of OCR, faster and
+  exact. _Rec: good (small)._ [ ]
+
+**Money and accounts**
+- **Accounts / paid from**: name the bank accounts and cards ("Chase checking", "Amex"), say which one paid each
+  expense, see a balance per account. Makes bank matching and reports much clearer. _Rec: must (before Reports)._ [ ]
+- **Monthly reconcile**: enter the statement's ending balance, the app shows what's missing or extra until they
+  agree, then marks that month reconciled. _Rec: good (builds on bank import)._ [ ]
+- **Owner draws and contributions, loans**: money the owner takes out or puts in, and loan payments (principal is
+  not an expense), so Profit & Loss isn't thrown off. _Rec: must (before Reports)._ [ ]
+- **Close a month or year**: lock past periods once the books go to the tax pro, so nothing changes by accident
+  (unlock with the PIN). _Rec: good._ [ ]
+- **Change history**: a hidden sheet that records every change to money (what, old → new, when). Peace of mind if a
+  number looks wrong. _Rec: good._ [ ]
+- **Budgets**: a monthly amount per category with progress on the Expenses tab. _Rec: later._ [ ]
+- **Equipment / assets list**: big purchases (tools, trucks, computers) with date and cost for the tax pro's
+  depreciation, plus warranty papers attached. _Rec: later._ [ ]
+
+**Taxes** (always "confirm with your tax professional")
+- **Quarterly estimated tax helper**: profit so far × a percentage the owner sets, due dates, a record of payments
+  made. _Rec: good._ [ ]
+- **Sales tax report**: collected (Sales) vs. paid (expenses), per filing period. _Rec: good (with 1.5.0 Sales)._ [ ]
+- **1099-NEC forms**: print on the IRS forms or export the file the IRS's free e-file system (IRIS) accepts, from
+  the totals the app already has. _Rec: good._ [ ]
+- **W-9 on file** checkbox and date for contractors and 1099 vendors (still no tax IDs stored). _Rec: good (tiny)._ [ ]
+
+**People and time**
+- **Jobs / projects**: tag hours, expenses and mileage to a job or customer and see what each job cost vs. what it
+  brought in. Big for trades and crews. _Rec: good._ [ ]
+- **PTO balances**: hours earned per pay period, used, and left for each person. _Rec: good._ [ ]
+- **Clock-in kiosk**: people clock themselves in and out on a shared PC with their own short code; the owner still
+  approves the time card. _Rec: later._ [ ]
+- **Printable blank time sheets** for crews without a computer, entered later. _Rec: later (tiny)._ [ ]
+- **Direct deposit file** (NACHA) for the bank instead of printing checks. _Rec: later (needs the bank's setup)._ [ ]
+- **W-2 employees** (real withholding tables, 941/W-2 forms): a large, rule-heavy area; today the app pays
+  contractors. _Rec: no, unless the business hires employees; a payroll service is safer._ [ ]
+
+**Customers** (with 1.5.0 Sales)
+- **Who owes what**: open invoices, aging (30/60/90 days), and a printable customer statement. _Rec: good._ [ ]
+- **Estimates / quotes** that turn into an invoice with one click. _Rec: later._ [ ]
+- **Email an invoice** through the owner's own email program (nothing sent by TimeBooks itself). _Rec: good (small)._ [ ]
+
+**Safety and data**
+- **Restore from backup**: pick a backup by date, see what's in it, restore it as a copy, then switch. Backups only
+  matter if restoring is easy. _Rec: must._ [ ]
+- **Encrypted backups** for cloud folders (Google Drive / OneDrive): a password-protected copy. _Rec: good._ [ ]
+- **Import from QuickBooks / Wave / a spreadsheet** (CSV of expenses, customers, vendors) to start mid-year.
+  _Rec: later._ [ ]
+- **Two computers, one workbook** (a shared folder): detect the other PC has it open and refuse to save over it
+  instead of only warning. _Rec: good if the office has more than one PC._ [ ]
+- **Spanish** for the screens and printouts. _Rec: later (only if a user needs it)._ [ ]
