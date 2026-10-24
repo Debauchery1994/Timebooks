@@ -102,5 +102,51 @@ class StatementTests(unittest.TestCase):
             statements.export_annual_statements(book, tmp)
 
 
+def _logo_png() -> bytes:
+    import io
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+    ImageDraw.Draw(img).ellipse((5, 5, 95, 95), fill=(0, 128, 128, 255))
+    out = io.BytesIO()
+    img.save(out, "PNG")
+    return out.getvalue()
+
+
+class StatementBrandingTests(unittest.TestCase):
+    def _pdf_bytes(self, book) -> bytes:
+        from reportlab import rl_config
+        old = rl_config.pageCompression
+        rl_config.pageCompression = 0
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                pdf, _ = statements.export_annual_statements(book, tmp)
+                return pdf.read_bytes()
+        finally:
+            rl_config.pageCompression = old
+
+    def test_logo_and_brand_color(self) -> None:
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.rl_accel import fp_str
+        book = sample_book()
+        book.logo_png = _logo_png()
+        book.company.brand_color = "#00807F"
+        data = self._pdf_bytes(book)
+        self.assertIn(b"/Subtype /Image", data)
+        c = HexColor("#00807F")
+        self.assertIn(fp_str(c.red, c.green, c.blue).encode(), data)
+        self.assertNotIn(b"23.47", data)
+
+    def test_logo_off_or_missing(self) -> None:
+        book = sample_book()
+        book.logo_png = _logo_png()
+        book.company.logo_on_reports = False
+        self.assertNotIn(b"/Subtype /Image", self._pdf_bytes(book))
+        book = sample_book()
+        book.company.brand_color = "not a color"
+        data = self._pdf_bytes(book)
+        self.assertNotIn(b"/Subtype /Image", data)
+        self.assertIn(b"Annual Payment Summary", data)
+
+
 if __name__ == "__main__":
     unittest.main()

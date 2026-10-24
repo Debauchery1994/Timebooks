@@ -6,6 +6,7 @@ or logged hours during the year.
 """
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -20,10 +21,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
-                                TableStyle)
+from reportlab.platypus import (HRFlowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer,
+                                Table, TableStyle)
 
-from . import calc
+from . import branding, calc
 from .models import Employee, PayrollRecord
 
 if TYPE_CHECKING:
@@ -100,13 +101,35 @@ def default_basename(book: "TimecardBook") -> str:
 
 # ---------------------------------------------------------------- PDF
 
-def _table(rows: list[list], widths: list[float], money_cols: tuple[int, ...] = (), total_row: bool = False) -> Table:
+def _brand(co) -> tuple[colors.Color, colors.Color]:
+    """(ink, tint): brand color readable as text on white, and a light tint for header shading."""
+    raw = branding.brand_color(getattr(co, "brand_color", "") or "")
+    b = colors.HexColor(raw)
+    k = 0.88
+    return (colors.HexColor(branding.ink_color(raw)),
+            colors.Color(b.red * (1 - k) + k, b.green * (1 - k) + k, b.blue * (1 - k) + k))
+
+
+def _logo_flowable(book: "TimecardBook", max_w: float, max_h: float):
+    png = getattr(book, "logo_png", b"") or b""
+    if not png or not getattr(book.company, "logo_on_reports", True):
+        return None
+    try:
+        w, h = branding.fit_logo(png, max_w, max_h)
+        return Image(io.BytesIO(png), width=w, height=h)
+    except Exception:
+        return None
+
+
+def _table(rows: list[list], widths: list[float], money_cols: tuple[int, ...] = (), total_row: bool = False,
+           ink=colors.black, tint=SHADE) -> Table:
     t = Table(rows, colWidths=widths, repeatRows=1)
     style = [
         ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8.5),
         ("FONT", (0, 1), (-1, -1), "Helvetica", 8.5),
-        ("BACKGROUND", (0, 0), (-1, 0), SHADE),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), tint),
+        ("TEXTCOLOR", (0, 0), (-1, 0), ink),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, ink),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
@@ -127,15 +150,28 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
     year = co.year
     threshold = Decimal(str(co.form_1099_threshold))
     styles = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=styles["Title"], fontSize=16, alignment=0, spaceAfter=2)
+    ink, tint = _brand(co)
+    h1 = ParagraphStyle("h1", parent=styles["Title"], fontSize=16, alignment=0, spaceAfter=2, textColor=ink)
     small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8.5, leading=11)
     note = ParagraphStyle("note", parent=small, textColor=colors.Color(0.35, 0.35, 0.35))
+    h2 = ParagraphStyle("h2", parent=small, fontName="Helvetica-Bold", textColor=ink)
     company_lines = "<br/>".join(x for x in (co.company_name, co.address1, co.address2, co.phone) if x)
     printed = datetime.now().strftime("%m/%d/%Y")
 
+    page_w = letter[0] - 1.2 * inch
+
     def header(title: str) -> list:
-        return [Paragraph(title, h1), Paragraph(company_lines, small),
-                Paragraph(f"Calendar year {year} &middot; prepared {printed}", note), Spacer(1, 10)]
+        block = [Paragraph(title, h1), Paragraph(company_lines, small),
+                 Paragraph(f"Calendar year {year} &middot; prepared {printed}", note)]
+        logo = _logo_flowable(book, 2.0 * inch, 0.6 * inch)
+        if logo is not None:
+            lw = logo.drawWidth
+            top = Table([[block, logo]], colWidths=[page_w - lw - 0.1 * inch, lw + 0.1 * inch])
+            top.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                                     ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                     ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+            block = [top]
+        return block + [Spacer(1, 4), HRFlowable(width="100%", thickness=1, color=ink, spaceAfter=10)]
 
     story: list = header(f"Annual Payment Summary — {year}")
     rows = [["ID", "Name", "Hours", "Compensation", "Adjustments", "Total Paid", "Checks", "1099 review"]]
@@ -149,7 +185,8 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
                  _money(sum((s.paid for s in statements), ZERO)),
                  str(sum(len(s.checks) for s in statements)), ""])
     story.append(_table(rows, [0.5 * inch, 1.9 * inch, 0.6 * inch, 0.95 * inch, 0.85 * inch, 0.9 * inch,
-                               0.5 * inch, 1.05 * inch], money_cols=(2, 3, 4, 5, 6), total_row=True))
+                               0.5 * inch, 1.05 * inch], money_cols=(2, 3, 4, 5, 6), total_row=True,
+                        ink=ink, tint=tint))
     story += [Spacer(1, 10), Paragraph(
         f"Compensation is pay for work (hours &times; rate, or salary). Adjustments are amounts added to (+) or "
         f"deducted from (&minus;) checks, such as reimbursements. Payments are counted in the year of the check "
@@ -170,12 +207,15 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
         story += [info, Spacer(1, 8)]
         totals = [["Hours worked", "Compensation", "Adjustments", "Total paid", "Checks"],
                   [f"{s.hours:,.2f}", _money(s.gross), _signed(s.adjustments), _money(s.paid), str(len(s.checks))]]
-        story += [_table(totals, [1.44 * inch] * 5, money_cols=(0, 1, 2, 3, 4)), Spacer(1, 10)]
+        story += [_table(totals, [1.44 * inch] * 5, money_cols=(0, 1, 2, 3, 4), ink=ink, tint=tint),
+                  Spacer(1, 10)]
         cells = [_money(m) if m else "—" for m in s.monthly_paid]
-        mt = _table([MONTHS[:6], cells[:6], MONTHS[6:], cells[6:]], [1.2 * inch] * 6, money_cols=tuple(range(6)))
-        mt.setStyle(TableStyle([("FONT", (0, 2), (-1, 2), "Helvetica-Bold", 8.5), ("BACKGROUND", (0, 2), (-1, 2), SHADE),
-                                ("LINEBELOW", (0, 2), (-1, 2), 0.6, colors.black)]))
-        story += [Paragraph("<b>Paid by month</b>", small), Spacer(1, 3), mt, Spacer(1, 10)]
+        mt = _table([MONTHS[:6], cells[:6], MONTHS[6:], cells[6:]], [1.2 * inch] * 6, money_cols=tuple(range(6)),
+                    ink=ink, tint=tint)
+        mt.setStyle(TableStyle([("FONT", (0, 2), (-1, 2), "Helvetica-Bold", 8.5), ("BACKGROUND", (0, 2), (-1, 2), tint),
+                                ("TEXTCOLOR", (0, 2), (-1, 2), ink),
+                                ("LINEBELOW", (0, 2), (-1, 2), 0.6, ink)]))
+        story += [Paragraph("Paid by month", h2), Spacer(1, 3), mt, Spacer(1, 10)]
         crow = [["Check #", "Date", "Pay period", "Hours", "Compensation", "Adjustment", "Check amount"]]
         for r in s.checks:
             crow.append([str(r.check_number), r.check_date.strftime("%m/%d/%Y"),
@@ -184,9 +224,9 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
                          _signed(-r.other_deductions), _money(r.net_pay)])
         crow.append(["", "", "Total", f"{sum((r.regular_hours + r.overtime_hours for r in s.checks), ZERO):,.2f}",
                      _money(s.gross), _signed(s.adjustments), _money(s.paid)])
-        story += [Paragraph("<b>Checks issued</b>", small), Spacer(1, 3),
+        story += [Paragraph("Checks issued", h2), Spacer(1, 3),
                   _table(crow, [0.7 * inch, 0.85 * inch, 1.6 * inch, 0.7 * inch, 1.1 * inch, 1.0 * inch, 1.1 * inch],
-                         money_cols=(3, 4, 5, 6), total_row=True)]
+                         money_cols=(3, 4, 5, 6), total_row=True, ink=ink, tint=tint)]
         if not s.checks:
             story.append(Paragraph("No checks were issued to this payee during the year.", note))
 

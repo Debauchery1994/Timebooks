@@ -6,6 +6,7 @@ The pay rate is stored in the workbook but is NEVER displayed anywhere in this U
 from __future__ import annotations
 
 import csv
+import io
 import dataclasses
 import json
 import logging
@@ -20,11 +21,11 @@ import traceback
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
+from tkinter import colorchooser, filedialog, font as tkfont, messagebox, simpledialog, ttk
 
 from .models import *  # noqa: F401,F403  (Company, Employee, TimeEntry, PayrollRecord, HoursSummary, ...)
 from .models import Company, Employee, HoursSummary, PayrollRecord, TimeEntry
-from . import backup, calc, checks, paths, security, statements
+from . import backup, branding, calc, checks, paths, security, statements
 from .storage import TimecardBook, WorkbookError
 
 try:
@@ -70,7 +71,7 @@ THEMES: dict[str, dict] = {
         invalid_bg="#F8D7DA", invalid_fg="#7F1D1D", invalid_border="#B91C1C",
         select_bg="#1F5FAD", select_fg="#FFFFFF", card_bg="#FFFFFF", card_fg="#111827", card_border="#C8CDD3",
         status_bg="#E5E7EB", status_fg="#1F2937", error_fg="#B91C1C", header_bg="#1F3A5F", header_fg="#FFFFFF",
-        header_sub="#C9D6E8", header_btn_bg="#2E5283", year_bg="#2E5283", portable_bg="#B45309",
+        header_sub="#C9D6E8", header_btn_bg="#2E5283", header_btn_fg="#FFFFFF", year_bg="#2E5283", portable_bg="#B45309",
         portable_fg="#FFFFFF", total_bg="#E3E8EF", inactive_fg="#6B7280", heading_bg="#E9ECF0",
         heading_fg="#111827", grid_head_fg="#374151", disabled_fg="#6B7280", focus="#1F5FAD",
         focus_width=1, border_width=1, bold_all=False),
@@ -80,7 +81,7 @@ THEMES: dict[str, dict] = {
         invalid_bg="#6B1A1A", invalid_fg="#FFE4E4", invalid_border="#FF8A8A",
         select_bg="#2F5C8F", select_fg="#FFFFFF", card_bg="#26282C", card_fg="#F1F3F4", card_border="#4A4E55",
         status_bg="#2B2D31", status_fg="#D7DADF", error_fg="#FF9B9B", header_bg="#10233D", header_fg="#FFFFFF",
-        header_sub="#B9C9DE", header_btn_bg="#24456F", year_bg="#24456F", portable_bg="#9A4A06",
+        header_sub="#B9C9DE", header_btn_bg="#24456F", header_btn_fg="#FFFFFF", year_bg="#24456F", portable_bg="#9A4A06",
         portable_fg="#FFFFFF", total_bg="#33373D", inactive_fg="#9AA0A8", heading_bg="#2F3136",
         heading_fg="#F1F3F4", grid_head_fg="#D0D4DA", disabled_fg="#8A9099", focus="#7CB8FF",
         focus_width=2, border_width=1, bold_all=False),
@@ -90,7 +91,7 @@ THEMES: dict[str, dict] = {
         invalid_bg="#B00000", invalid_fg="#FFFFFF", invalid_border="#FF6060",
         select_bg="#FFFF00", select_fg="#000000", card_bg="#000000", card_fg="#FFFFFF", card_border="#FFFFFF",
         status_bg="#000000", status_fg="#FFFFFF", error_fg="#FF8080", header_bg="#000000", header_fg="#FFFFFF",
-        header_sub="#FFFF00", header_btn_bg="#000000", year_bg="#000000", portable_bg="#000000",
+        header_sub="#FFFF00", header_btn_bg="#FFFF00", header_btn_fg="#000000", year_bg="#000000", portable_bg="#000000",
         portable_fg="#FFD000", total_bg="#1A1A1A", inactive_fg="#00FFFF", heading_bg="#000000",
         heading_fg="#FFFF00", grid_head_fg="#FFFF00", disabled_fg="#C0C0C0", focus="#00FFFF",
         focus_width=3, border_width=2, bold_all=True),
@@ -149,7 +150,7 @@ def _configure_fonts(root: tk.Misc) -> None:
 def _configure_styles(root: tk.Misc) -> None:
     style = ttk.Style(root)
     themes = style.theme_names()
-    base = P["base"] if P["base"] in themes else "clam"
+    base = P["base"] if P["base"] in themes and _appearance["scale"] <= 125 else "clam"
     if style.theme_use() != base:
         style.theme_use(base)
     bg, fg, muted, accent = P["bg"], P["fg"], P["muted"], P["accent"]
@@ -160,7 +161,7 @@ def _configure_styles(root: tk.Misc) -> None:
         style.configure(".", fieldbackground=P["field_bg"], selectbackground=P["select_bg"],
                         selectforeground=P["select_fg"], insertcolor=P["field_fg"], troughcolor=P["card_bg"],
                         bordercolor=P["field_border"], lightcolor=bg, darkcolor=bg, focuscolor=P["focus"],
-                        arrowcolor=fg, indicatorcolor=P["field_bg"])
+                        arrowcolor=fg, indicatorcolor=P["field_bg"], arrowsize=scaled(13))
         style.map(".", foreground=[("disabled", P["disabled_fg"])],
                   background=[("disabled", bg)])
         style.configure("TButton", background=P["card_bg"], foreground=fg, bordercolor=P["field_border"],
@@ -176,7 +177,8 @@ def _configure_styles(root: tk.Misc) -> None:
             style.configure(w, fieldbackground=P["field_bg"], foreground=P["field_fg"],
                             bordercolor=P["field_border"], lightcolor=P["field_bg"], darkcolor=P["field_bg"],
                             insertcolor=P["field_fg"], arrowcolor=fg, borderwidth=bw,
-                            selectbackground=P["select_bg"], selectforeground=P["select_fg"])
+                            selectbackground=P["select_bg"], selectforeground=P["select_fg"],
+                            arrowsize=scaled(13))
             style.map(w, bordercolor=[("focus", P["focus"])], lightcolor=[("focus", P["focus"])],
                       fieldbackground=[("readonly", P["field_bg"]), ("disabled", bg)],
                       foreground=[("disabled", P["disabled_fg"]), ("readonly", P["field_fg"])],
@@ -195,7 +197,7 @@ def _configure_styles(root: tk.Misc) -> None:
         style.configure("TLabelframe", background=bg, bordercolor=P["card_border"], borderwidth=bw,
                         lightcolor=bg, darkcolor=bg)
         style.configure("TScrollbar", background=P["card_bg"], troughcolor=bg, arrowcolor=fg,
-                        bordercolor=P["card_border"])
+                        bordercolor=P["card_border"], arrowsize=scaled(14))
         style.configure("TSeparator", background=P["card_border"])
         style.configure("TPanedwindow", background=bg)
         style.configure("Sash", background=P["card_border"])
@@ -232,6 +234,7 @@ def _configure_styles(root: tk.Misc) -> None:
     style.map("Link.TButton", foreground=[("active", accent), ("focus", accent)], background=[("active", bg)])
     style.configure("Card.TFrame", background=P["card_bg"], relief="solid", borderwidth=P["border_width"],
                     bordercolor=P["card_border"])
+    style.configure("CardInner.TFrame", background=P["card_bg"], borderwidth=0, relief="flat")
     style.configure("CardMuted.TLabel", background=P["card_bg"], foreground=muted, font=F("small"))
     style.configure("CardBig.TLabel", background=P["card_bg"], foreground=P["card_fg"], font=F("big"))
     style.configure("Status.TFrame", background=P["status_bg"])
@@ -251,7 +254,9 @@ def _configure_styles(root: tk.Misc) -> None:
         root.option_add(f"*{opt}", val)
     root.option_add("*Entry.background", P["field_bg"])
     root.option_add("*Entry.foreground", P["field_fg"])
-    root.option_add("*font", F("base"))
+    # classic tk widgets only - a generic "*font" would also override every ttk style font
+    for cls in ("Label", "Entry", "Button", "Listbox", "Text", "Menu", "Checkbutton", "Radiobutton", "Spinbox"):
+        root.option_add(f"*{cls}.font", F("base"))
 
 
 TREE_TAGS = {
@@ -303,13 +308,17 @@ def apply_tk_colors(widget: tk.Misc) -> None:
                 if fg_key:
                     kw["fg"] = P[fg_key]
                 if role == "header_btn":
-                    kw.update(activebackground=P["select_bg"], activeforeground=P["select_fg"],
+                    kw.update(disabledforeground=_mix(P["header_btn_bg"], P["header_btn_fg"], 0.55),
+                          activebackground=P["select_bg"], activeforeground=P["select_fg"],
                               highlightcolor=P["focus"], highlightbackground=P["header_bg"],
-                              highlightthickness=max(1, P["focus_width"]), relief="solid" if P["bold_all"]
-                              else "flat", bd=1 if P["bold_all"] else 0)
+                              highlightthickness=max(1, P["focus_width"]), relief="flat", bd=0)
+                    if P["bold_all"]:   # high contrast: always-visible white outline, cyan when focused
+                        kw.update(highlightbackground=P["header_fg"], highlightthickness=2)
                 if role in ("year", "portable") and P["bold_all"]:
                     kw.update(highlightthickness=1, highlightbackground=P["header_fg"])
                 w.configure(**kw)
+            elif role == "keep":
+                pass
             elif cls in ("Entry", "Text", "Spinbox", "Listbox"):
                 paint_cell(w)
             elif cls in ("Frame", "Toplevel", "Canvas", "Tk"):
@@ -322,6 +331,11 @@ def apply_tk_colors(widget: tk.Misc) -> None:
                             selectcolor=P["field_fg"], font=F("base"))
             elif cls == "Treeview":
                 style_tree(w)
+                base_w = getattr(w, "_tc_basew", None)
+                if base_w is None:
+                    base_w = w._tc_basew = {c: int(w.column(c, "width")) for c in w["columns"]}
+                for c, bw_ in base_w.items():
+                    w.column(c, width=scaled(bw_), minwidth=scaled(min(bw_, 40)))
             elif cls == "TCombobox":
                 try:
                     pd = w.tk.call("ttk::combobox::PopdownWindow", w)
@@ -337,14 +351,54 @@ def apply_tk_colors(widget: tk.Misc) -> None:
 # role -> (fg palette key or None, bg palette key)
 HEADER_ROLES = {
     "header": (None, "header_bg"), "header_title": ("header_fg", "header_bg"),
-    "header_sub": ("header_sub", "header_bg"), "header_btn": ("header_fg", "header_btn_bg"),
+    "header_sub": ("header_sub", "header_bg"), "header_btn": ("header_btn_fg", "header_btn_bg"),
+    "stripe": (None, "stripe_bg"),
     "year": ("header_fg", "year_bg"), "portable": ("portable_fg", "portable_bg"),
 }
+
+
+_brand = {"color": ""}
+
+
+def _mix(a: str, b: str, t: float) -> str:
+    a, b = branding.brand_color(a), branding.brand_color(b)
+    ca = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    cb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * t):02X}" for x, y in zip(ca, cb))
+
+
+def _apply_brand_palette() -> None:
+    """Light theme: header in the company's brand colour with readable (black/white) text.
+    Dark / High Contrast keep their own header colours and only show a thin brand stripe."""
+    color = _brand["color"]
+    valid = branding.is_valid_color(color or "")
+    P["stripe_bg"] = branding.brand_color(color) if valid else P["header_bg"]
+    if _appearance["theme"] == "Light" and valid:
+        c = branding.brand_color(color)
+        fg = branding.text_on(c)
+        btn = _mix(c, fg, 0.18)
+        P.update(header_bg=c, header_fg=fg, header_sub=fg, year_bg=_mix(c, fg, 0.10),
+                 header_btn_bg=btn, header_btn_fg=branding.text_on(btn))
 
 
 def tag_role(w: tk.Widget, role: str) -> tk.Widget:
     w._tc_role = role
     return w
+
+
+def logo_photo(master: tk.Misc, png: bytes, max_w: int, max_h: int):
+    """PhotoImage of the logo fitted into max_w x max_h (caller must keep a reference), or None."""
+    if not png:
+        return None
+    try:
+        from PIL import Image, ImageTk
+        w, h = branding.fit_logo(png, max_w, max_h)
+        img = Image.open(io.BytesIO(png)).convert("RGBA")
+        img = img.resize((max(1, int(w)), max(1, int(h))), Image.LANCZOS)
+        return ImageTk.PhotoImage(img, master=master)
+    except Exception:  # noqa: BLE001 - a bad logo must never break the window
+        log.exception("Could not display logo")
+        return None
 
 
 def apply_appearance(root: tk.Misc, theme: str, scale: int) -> None:
@@ -353,6 +407,7 @@ def apply_appearance(root: tk.Misc, theme: str, scale: int) -> None:
     _appearance.update(theme=theme, scale=scale)
     P.clear()
     P.update(THEMES[theme])
+    _apply_brand_palette()
     _configure_fonts(root)
     _configure_styles(root)
     apply_tk_colors(root)
@@ -504,22 +559,94 @@ class Settings:
 
 # --------------------------------------------------------------------------- reusable widgets
 
+_FLOWS: list = []
+
+
+class FlowFrame(ttk.Frame):
+    """Lays out groups (sub-frames made with .group()) left to right, wrapping to new lines when the
+    window is too narrow - keeps toolbars usable at large text sizes."""
+
+    def __init__(self, master, gap: int = 18, **kw):
+        super().__init__(master, **kw)
+        self.gap = gap
+        self.groups: list[ttk.Frame] = []
+        self._last = None
+        self.bind("<Configure>", lambda e: self.relayout())
+        _FLOWS.append(self)
+
+    def group(self) -> ttk.Frame:
+        g = ttk.Frame(self)
+        self.groups.append(g)
+        return g
+
+    def relayout(self) -> None:
+        try:
+            width = self.winfo_width()
+        except tk.TclError:
+            return
+        if width <= 1:
+            width = self.winfo_toplevel().winfo_width() or 1000
+        widths = tuple(g.winfo_reqwidth() for g in self.groups)
+        if self._last == (width, widths):
+            return
+        self._last = (width, widths)
+        row = col = x = 0
+        gap = scaled(self.gap)
+        for g, w in zip(self.groups, widths):
+            if col and x + w > width:
+                row, col, x = row + 1, 0, 0
+            g.grid(row=row, column=col, sticky="w", padx=(0, gap), pady=(0, scaled(4)))
+            x += w + gap
+            col += 1
+        for c in range(len(self.groups) + 1):
+            self.columnconfigure(c, weight=0)
+
+
+def relayout_flows() -> None:
+    for f in list(_FLOWS):
+        try:
+            if f.winfo_exists():
+                f._last = None
+                f.relayout()
+            else:
+                _FLOWS.remove(f)
+        except tk.TclError:
+            _FLOWS.remove(f)
+
+
 class ScrollFrame(ttk.Frame):
-    """Vertically scrollable frame; put children in .inner."""
+    """Scrollable frame (vertical, plus horizontal when the content is wider); put children in .inner."""
 
     def __init__(self, master, **kw):
         super().__init__(master, **kw)
         self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0, background=P["bg"])
         self.vsb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.hsb = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        self.canvas.configure(yscrollcommand=self.vsb.set, xscrollcommand=self._xset)
         self.inner = ttk.Frame(self.canvas)
         self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.vsb.grid(row=0, column=1, sticky="ns")
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
-        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        self.inner.bind("<Configure>", lambda e: self._fit())
+        self.canvas.bind("<Configure>", lambda e: self._fit())
+
+    def _fit(self) -> None:
+        """Inner frame fills the canvas width, but may be wider (then a horizontal scrollbar appears)."""
+        try:
+            want = max(self.canvas.winfo_width(), self.inner.winfo_reqwidth())
+            self.canvas.itemconfigure(self._win, width=want)
+            self.canvas.configure(scrollregion=(0, 0, want, max(self.inner.winfo_reqheight(), 1)))
+        except tk.TclError:
+            pass
+
+    def _xset(self, lo, hi) -> None:
+        self.hsb.set(lo, hi)
+        if float(lo) <= 0.0 and float(hi) >= 1.0:
+            self.hsb.grid_remove()
+        else:
+            self.hsb.grid(row=1, column=0, sticky="ew")
         self.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_wheel))
         self.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
@@ -728,44 +855,50 @@ class TimeCardTab(ttk.Frame):
         self.current_row = 0
         self.commit_fns: dict[str, callable] = {}
 
-        top = ttk.Frame(self)
+        top = FlowFrame(self)
         top.pack(fill="x")
-        ttk.Label(top, text="Employee").pack(side="left")
+        g1 = top.group()
+        ttk.Label(g1, text="Employee").pack(side="left")
         self.v_emp = tk.StringVar()
-        self.cb_emp = ttk.Combobox(top, textvariable=self.v_emp, state="readonly", width=30)
-        self.cb_emp.pack(side="left", padx=(6, 18))
+        self.cb_emp = ttk.Combobox(g1, textvariable=self.v_emp, state="readonly", width=26)
+        self.cb_emp.pack(side="left", padx=(6, 0))
         self.cb_emp.bind("<<ComboboxSelected>>", lambda e: self.rebuild())
-        ttk.Label(top, text="Pay period").pack(side="left")
-        ttk.Button(top, text="\u25C0", width=3, command=lambda: self.step_period(-1)).pack(side="left", padx=(6, 2))
+        g2 = top.group()
+        ttk.Label(g2, text="Pay period").pack(side="left")
+        ttk.Button(g2, text="\u25C0", width=3, command=lambda: self.step_period(-1)).pack(side="left", padx=(6, 2))
         self.v_period = tk.StringVar()
-        self.cb_period = ttk.Combobox(top, textvariable=self.v_period, state="readonly", width=34)
+        self.cb_period = ttk.Combobox(g2, textvariable=self.v_period, state="readonly", width=31)
         self.cb_period.pack(side="left")
         self.cb_period.bind("<<ComboboxSelected>>", lambda e: self.rebuild())
-        ttk.Button(top, text="\u25B6", width=3, command=lambda: self.step_period(1)).pack(side="left", padx=(2, 6))
-        ttk.Button(top, text="Today", command=self.go_today).pack(side="left")
+        ttk.Button(g2, text="\u25B6", width=3, command=lambda: self.step_period(1)).pack(side="left", padx=(2, 6))
+        ttk.Button(g2, text="Today", command=self.go_today).pack(side="left")
 
-        actions = ttk.Frame(self, padding=(0, 10, 0, 6))
+        actions = FlowFrame(self, gap=8, padding=(0, 8, 0, 0))
         actions.pack(fill="x")
-        ttk.Button(actions, text="Copy previous day", command=self.copy_previous_day).pack(side="left")
-        ttk.Button(actions, text="Clear day", command=self.clear_day).pack(side="left", padx=6)
-        ttk.Button(actions, text="Print time card", style="Accent.TButton",
-                   command=self.print_timecard).pack(side="right")
-        ttk.Label(actions, text="Type times like 8, 830a, 5:15 pm or 17:15. Tab / Enter moves to the next cell.",
-                  style="Muted.TLabel").pack(side="left", padx=12)
+        a1 = actions.group()
+        ttk.Button(a1, text="Copy previous day", command=self.copy_previous_day).pack(side="left")
+        ttk.Button(a1, text="Clear day", command=self.clear_day).pack(side="left", padx=6)
+        a2 = actions.group()
+        ttk.Button(a2, text="Print time card", style="Accent.TButton",
+                   command=self.print_timecard).pack(side="left")
+        ttk.Label(self, text="Type times like 8, 830a, 5:15 pm or 17:15. Tab / Enter moves to the next cell.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(2, 6))
 
         self.scroll = ScrollFrame(self)
         self.scroll.pack(fill="both", expand=True)
         self.grid_frame = self.scroll.inner
 
         foot = ttk.Frame(self, style="Card.TFrame", padding=(14, 10))
-        foot.pack(fill="x", pady=(8, 0))
+        foot.pack(side="bottom", fill="x", pady=(8, 0))
+        self.scroll.pack_forget()   # re-pack after the footer so the footer always keeps its height
+        self.scroll.pack(fill="both", expand=True)
         self.v_reg = tk.StringVar(value="0.00")
         self.v_ot = tk.StringVar(value="0.00")
         self.v_tot = tk.StringVar(value="0.00")
         self.foot_boxes: dict[str, ttk.Frame] = {}
         for key, label, var in (("reg", "Regular hours", self.v_reg), ("ot", "Overtime hours", self.v_ot),
                                 ("tot", "Total hours", self.v_tot)):
-            box = ttk.Frame(foot, style="Card.TFrame")
+            box = ttk.Frame(foot, style="CardInner.TFrame")
             ttk.Label(box, text=label, style="CardMuted.TLabel").pack(anchor="w")
             ttk.Label(box, textvariable=var, style="CardBig.TLabel").pack(anchor="w")
             self.foot_boxes[key] = box
@@ -1314,7 +1447,7 @@ class LockOverlay(ttk.Frame):
         form.pack()
         ttk.Label(form, text="PIN").grid(row=0, column=0, sticky="e", padx=(0, 8), pady=3)
         self.e_pin = ttk.Entry(form, show="•", width=14, justify="center", font=F("pin"))
-        self.e_pin.grid(row=0, column=1, pady=3)
+        self.e_pin.grid(row=0, column=1, pady=3, sticky="w")
         self.e_conf = None
         self.cb_q = self.e_ans = self.e_ans2 = None
         if create:
@@ -2101,18 +2234,20 @@ class PayrollTab(ttk.Frame):
         self.preview_period: tuple[date, date] | None = None
         self._ot_shown: bool | None = None
 
-        top = ttk.Frame(self)
+        top = FlowFrame(self)
         top.pack(fill="x")
-        ttk.Label(top, text="Pay period").pack(side="left")
-        ttk.Button(top, text="◀", width=3, command=lambda: self.step_period(-1)).pack(side="left", padx=(6, 2))
-        self.cb_period = ttk.Combobox(top, state="readonly", width=34)
+        g1 = top.group()
+        ttk.Label(g1, text="Pay period").pack(side="left")
+        ttk.Button(g1, text="\u25C0", width=3, command=lambda: self.step_period(-1)).pack(side="left", padx=(6, 2))
+        self.cb_period = ttk.Combobox(g1, state="readonly", width=31)
         self.cb_period.pack(side="left")
         self.cb_period.bind("<<ComboboxSelected>>", lambda e: self.on_period_change())
-        ttk.Button(top, text="▶", width=3, command=lambda: self.step_period(1)).pack(side="left", padx=(2, 18))
-        ttk.Label(top, text="Check date").pack(side="left")
+        ttk.Button(g1, text="\u25B6", width=3, command=lambda: self.step_period(1)).pack(side="left", padx=(2, 0))
+        g2 = top.group()
+        ttk.Label(g2, text="Check date").pack(side="left")
         self.v_check_date = tk.StringVar(value=date.today().isoformat())
-        ttk.Entry(top, textvariable=self.v_check_date, width=12).pack(side="left", padx=6)
-        ttk.Button(top, text="Calculate", style="Accent.TButton", command=self.calculate).pack(side="left", padx=6)
+        ttk.Entry(g2, textvariable=self.v_check_date, width=12).pack(side="left", padx=6)
+        ttk.Button(g2, text="Calculate", style="Accent.TButton", command=self.calculate).pack(side="left", padx=6)
 
         cols = ("emp", "hours", "ot", "amount", "adj", "net", "memo")
         self.tree = ttk.Treeview(self, columns=cols, show="headings", height=8)
@@ -2560,6 +2695,10 @@ class CompanyTab(ttk.Frame):
         ("Checks", "print_offset_x", "Print offset X (inches)", "float", None),
         ("Checks", "print_offset_y", "Print offset Y (inches)", "float", None),
         ("Checks", "signature_line_text", "Signature line text", "str", None),
+        ("Branding", "brand_color", "Brand color", "color", None),
+        ("Branding", "logo_on_checks", "Checks", "bool", "Show logo on checks (stubs; check face only on blank stock)"),
+        ("Branding", "logo_on_reports", "Reports", "bool",
+         "Show logo on reports (time cards, register, annual statements)"),
         ("Advanced", "federal_withholding_pct", "Federal withholding %", "float", None),
         ("Advanced", "state_withholding_pct", "State withholding %", "float", None),
         ("Advanced", "social_security_pct", "Social Security %", "float", None),
@@ -2580,7 +2719,7 @@ class CompanyTab(ttk.Frame):
         sf.pack(fill="both", expand=True)
         body = sf.inner
         frames: dict[str, ttk.Frame] = {}
-        layout = {"Company": (0, 0), "Bank": (1, 0), "Pay": (0, 1), "Checks": (1, 1)}
+        layout = {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1), "Checks": (1, 1)}
         rows: dict[str, int] = {}
         for section, (r, c) in layout.items():
             lf = ttk.LabelFrame(body, text=section, padding=12)
@@ -2593,7 +2732,12 @@ class CompanyTab(ttk.Frame):
 
         # collapsed "Advanced" group for the (unused for contractors) withholding percentages
         adv_outer = ttk.Frame(body, padding=(6, 4))
-        adv_outer.grid(row=2, column=0, columnspan=2, sticky="ew")
+        adv_outer.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.section_frames = frames
+        self.adv_outer = adv_outer
+        self._sections_single = None
+        self._build_logo_controls(frames["Branding"])
+        rows["Branding"] = 3
         self.v_adv_open = tk.BooleanVar(value=False)
         self.btn_adv = ttk.Button(adv_outer, text="", style="Toolbutton", command=self._toggle_advanced)
         self.btn_adv.pack(anchor="w")
@@ -2633,6 +2777,15 @@ class CompanyTab(ttk.Frame):
             elif kind == "bool":
                 w = ttk.Checkbutton(lf, text=opts, variable=v, command=self._update_ot_state)
                 w.grid(row=r, column=1, sticky="w", pady=3)
+            elif kind == "color":
+                fr = ttk.Frame(lf)
+                fr.grid(row=r, column=1, sticky="w", pady=3)
+                self.swatch = tag_role(tk.Label(fr, width=4, relief="solid", bd=1), "keep")
+                self.swatch.pack(side="left", padx=(0, 6), ipady=2)
+                w = ttk.Entry(fr, textvariable=v, width=10)
+                w.pack(side="left")
+                ttk.Button(fr, text="Pick\u2026", command=self._pick_color).pack(side="left", padx=(6, 0))
+                v.trace_add("write", lambda *_: self._update_swatch())
             elif kind == "secret":
                 w = ttk.Entry(lf, textvariable=v, width=24, show="•")
                 w.grid(row=r, column=1, sticky="w", pady=3)
@@ -2690,6 +2843,91 @@ class CompanyTab(ttk.Frame):
             self.adv_frame.pack_forget()
             self.btn_adv.configure(text="▸ Advanced (not used for contractors)")
 
+    # ----- branding
+    def _build_logo_controls(self, lf) -> None:
+        ttk.Label(lf, text="Logo").grid(row=0, column=0, sticky="nw", pady=3, padx=(0, 10))
+        self.logo_box = tag_role(tk.Label(lf, text="No logo", relief="solid", bd=1, anchor="center"), "keep")
+        self.logo_box.grid(row=0, column=1, sticky="w", pady=3)
+        self._logo_preview_img = None
+        bf = ttk.Frame(lf)
+        bf.grid(row=1, column=1, sticky="w", pady=(2, 6))
+        ttk.Button(bf, text="Choose Logo\u2026", command=self.choose_logo).pack(side="left")
+        ttk.Button(bf, text="Remove Logo", command=self.remove_logo).pack(side="left", padx=6)
+        ttk.Label(lf, text="PNG, JPG, BMP or GIF. It is stored inside the workbook.", style="Muted.TLabel",
+                  wraplength=360).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+    def refresh_logo_preview(self) -> None:
+        png = self.book.logo_png if self.book is not None else b""
+        self._logo_preview_img = logo_photo(self, png, scaled(240), scaled(90))
+        if self._logo_preview_img is not None:
+            self.logo_box.configure(image=self._logo_preview_img, text="", width=0, height=0,
+                                    bg=P["card_bg"], fg=P["card_fg"])
+        else:
+            # width/height are in characters when there is no image
+            self.logo_box.configure(image="", text="No logo", width=24, height=4, bg=P["card_bg"],
+                                    fg=P["muted"], font=F("italic"))
+
+    def choose_logo(self) -> None:
+        if self.book is None:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Choose company logo",
+                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"),
+                                                     ("All files", "*.*")])
+        if not path:
+            return
+        self.set_logo(path)
+
+    def set_logo(self, path_or_bytes) -> bool:
+        try:
+            self.book.set_logo(path_or_bytes)
+        except (ValueError, OSError) as exc:
+            messagebox.showwarning("Company logo", str(exc), parent=self)
+            return False
+        self.app.mark_dirty()
+        self.refresh_logo_preview()
+        self.app.refresh_branding()
+        self.app.status("Logo added. Remember to save the workbook.")
+        return True
+
+    def remove_logo(self) -> None:
+        if self.book is None or not self.book.logo_png:
+            return
+        self.book.clear_logo()
+        self.app.mark_dirty()
+        self.refresh_logo_preview()
+        self.app.refresh_branding()
+        self.app.status("Logo removed. Remember to save the workbook.")
+
+    def _update_swatch(self) -> None:
+        val = self.vars["brand_color"].get().strip()
+        ok = branding.is_valid_color(val)
+        self.swatch.configure(bg=val if ok else P["bg"], text="" if ok else "?",
+                              fg=P["error_fg"])
+
+    def _pick_color(self) -> None:
+        cur = self.vars["brand_color"].get().strip()
+        rgb, hx = colorchooser.askcolor(color=branding.brand_color(cur), parent=self, title="Brand color")
+        if hx:
+            self.vars["brand_color"].set(hx.upper())
+
+    def relayout_sections(self) -> None:
+        """Two columns normally; one column at large text sizes so nothing needs sideways scrolling."""
+        single = _appearance["scale"] >= 150
+        if single == self._sections_single:
+            return
+        self._sections_single = single
+        f = self.section_frames
+        if single:
+            order = ("Company", "Bank", "Branding", "Pay", "Checks")
+            for i, name in enumerate(order):
+                f[name].grid_configure(row=i, column=0)
+            self.adv_outer.grid_configure(row=len(order), column=0, columnspan=1)
+        else:
+            for name, (r, c) in {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1),
+                                 "Checks": (1, 1)}.items():
+                f[name].grid_configure(row=r, column=c)
+            self.adv_outer.grid_configure(row=3, column=0, columnspan=2)
+
     def _update_layout_state(self) -> None:
         manual = self.vars.get("check_layout") is not None and self.vars["check_layout"].get() == "manual_3up"
         for w in self.manual_widgets:
@@ -2727,6 +2965,9 @@ class CompanyTab(ttk.Frame):
         self._toggle_show()
         self._update_ot_state()
         self._update_layout_state()
+        self._update_swatch()
+        self.refresh_logo_preview()
+        self.relayout_sections()
         if any(getattr(c, f[1], 0) for f in self.FIELDS if f[0] == "Advanced") and not self.v_adv_open.get():
             self._toggle_advanced()   # show non-zero withholding so it isn't hidden
 
@@ -2775,6 +3016,10 @@ class CompanyTab(ttk.Frame):
                 break
         if not changes.get("company_name"):
             errors.append("Company name is required.")
+        if not branding.is_valid_color(changes.get("brand_color", "")):
+            errors.append("Brand color must look like #1F3A5F (a # and six hex digits).")
+        else:
+            changes["brand_color"] = changes["brand_color"].upper()
         if changes.get("check_layout") not in {k for k, _ in CHECK_LAYOUTS}:
             errors.append("Choose a check layout.")
         if changes.get("check_layout") == "manual_3up":
@@ -2791,6 +3036,7 @@ class CompanyTab(ttk.Frame):
             self.book.company = new
             self.app.mark_dirty()
             self.app.refresh_all()
+            self.app.refresh_branding()
             self.app.status("Company settings updated. Remember to save the workbook.")
         else:
             self.app.status("No changes to company settings.")
@@ -2856,6 +3102,7 @@ class App(tk.Tk):
             self.bind_all(seq, lambda e: (self.set_appearance(scale=100), "break")[1])
         apply_tk_colors(self)
         self._update_view_buttons()
+        self.refresh_branding()
 
         if load_last:
             self.after(50, self._open_last)
@@ -2891,9 +3138,38 @@ class App(tk.Tk):
         self.settings.data["text_scale"] = _appearance["scale"]
         self.settings.save()
         self._update_view_buttons()
+        self.refresh_branding()
+        if hasattr(self, "company_tab"):
+            self.company_tab.relayout_sections()
+            self.company_tab.refresh_logo_preview()
+        self.update_idletasks()
+        relayout_flows()
         if hasattr(self, "timecard_tab") and self.book is not None:
             self.timecard_tab.update_totals()
         self.status(f"{_appearance['theme']} theme, text size {_appearance['scale']}%.")
+
+    def refresh_branding(self) -> None:
+        """Header logo, brand-coloured header (Light) or brand stripe (Dark/High Contrast); live."""
+        _brand["color"] = self.book.company.brand_color if self.book is not None else ""
+        P.update(THEMES[_appearance["theme"]])
+        _apply_brand_palette()
+        apply_tk_colors(self._hdr)
+        apply_tk_colors(self.hdr_stripe)
+        png = self.book.logo_png if self.book is not None else b""
+        self._hdr_logo_img = logo_photo(self, png, scaled(160), scaled(40))
+        if self._hdr_logo_img is not None:
+            self.hdr_logo.configure(image=self._hdr_logo_img)
+            self.hdr_logo.pack(side="left", padx=(0, 12), before=self.lbl_company.master)
+        else:
+            self.hdr_logo.configure(image="")
+            self.hdr_logo.pack_forget()
+        color = self.book.company.brand_color if self.book is not None else ""
+        show_stripe = (_appearance["theme"] != "Light" and branding.is_valid_color(color or "")
+                       and branding.brand_color(color) != branding.DEFAULT_BRAND_COLOR)
+        if show_stripe:
+            self.hdr_stripe.pack(side="top", fill="x", after=self._hdr)
+        else:
+            self.hdr_stripe.pack_forget()
 
     def change_text_size(self, step: int) -> None:
         cur = TEXT_SCALES.index(_appearance["scale"]) if _appearance["scale"] in TEXT_SCALES else 0
@@ -2990,8 +3266,10 @@ class App(tk.Tk):
     def _build_header(self) -> None:
         hdr = tag_role(tk.Frame(self, padx=16, pady=10), "header")
         hdr.pack(side="top", fill="x")
+        self.hdr_logo = tag_role(tk.Label(hdr, bd=0), "header")
+        self._hdr_logo_img = None
+        self.hdr_stripe = tag_role(tk.Frame(self, height=4), "stripe")
         left = tag_role(tk.Frame(hdr), "header")
-        left.pack(side="left", fill="x", expand=True)
         self.lbl_company = tag_role(tk.Label(left, text=APP_NAME, font=F("title"), anchor="w"), "header_title")
         self.lbl_company.pack(anchor="w")
         self.lbl_path = tag_role(tk.Label(left, text="No workbook open", font=F("small"), anchor="w"),
@@ -3020,6 +3298,10 @@ class App(tk.Tk):
             drive = os.path.splitdrive(str(paths.app_dir()))[0] or str(paths.app_dir())
             tag_role(tk.Label(hdr, text=f"PORTABLE \u2014 data on {drive}", font=F("small_bold"), padx=10, pady=4),
                      "portable").pack(side="right", padx=(0, 10))
+        self.hdr_logo.pack(side="left", padx=(0, 12))
+        self.hdr_logo.pack_forget()
+        left.pack(side="left", fill="x", expand=True)   # packed last so the right side never clips
+        self._hdr = hdr
 
     def _build_welcome(self, master) -> ttk.Frame:
         f = ttk.Frame(master, padding=40)
@@ -3091,6 +3373,7 @@ class App(tk.Tk):
         self._show_book_ui(True)
         self.employees_tab.selected = None
         self.refresh_all(keep_selection=False)
+        self.refresh_branding()
         if book.path:
             self.settings.add_recent(book.path)
             self._rebuild_recent()

@@ -1082,7 +1082,7 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
     sig = Table([
         ["", "", "", "", "", "", ""],
         ["Employee Signature", "", "Date", "", "Supervisor Signature", "", "Date"],
-    ], colWidths=[w * inch for w in (2.45, 0.2, 0.9, 0.35, 2.45, 0.2, 0.9)],
+    ], colWidths=[w * inch for w in (2.4, 0.2, 0.85, 0.35, 2.4, 0.2, 0.85)],
         rowHeights=[0.45 * inch, None], hAlign="LEFT")
     sig.setStyle(TableStyle([
         ("FONT", (0, 1), (-1, 1), "Helvetica", 7.5),

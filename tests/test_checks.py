@@ -420,5 +420,145 @@ class CheckLayoutTests(unittest.TestCase):
                     self.assertIn(b"/MediaBox [ 0 0 792 756 ]", p.read_bytes())
 
 
+def _sample_logo_png() -> bytes:
+    """A small wide logo (teal mark + bar) with a transparent background."""
+    import io as _io
+    from PIL import Image, ImageDraw
+    img = Image.new("RGBA", (360, 120), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((6, 6, 114, 114), fill=(0, 128, 128, 255))
+    d.rectangle((40, 40, 80, 80), fill=(255, 255, 255, 255))
+    d.rectangle((130, 30, 350, 60), fill=(0, 96, 96, 255))
+    d.rectangle((130, 72, 290, 92), fill=(120, 170, 170, 255))
+    out = _io.BytesIO()
+    img.save(out, "PNG")
+    return out.getvalue()
+
+
+LOGO = _sample_logo_png()
+_IMG_DRAW = re.compile(rb"/FormXob\.\w+ Do")
+
+
+def _image_draws_per_page(p: Path) -> list[int]:
+    """Number of image draws in each page content stream (uncompressed PDFs)."""
+    raw = p.read_bytes()
+    streams = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", raw, re.S)
+    return [len(_IMG_DRAW.findall(st)) for st in streams if b" Tf" in st or _IMG_DRAW.search(st)]
+
+
+class BrandingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        cls._old = checks.PAGE_COMPRESSION
+        checks.PAGE_COMPRESSION = 0
+
+    @classmethod
+    def tearDownClass(cls):
+        checks.PAGE_COMPRESSION = cls._old
+
+    assertPdf = ChecksPdfTests.assertPdf
+
+    def _book(self, layout="voucher", stock="preprinted", logo=True, color="#00807F"):
+        book = _make_book(stock)
+        book.company.check_layout = layout
+        book.company.brand_color = color
+        book.company.logo_on_checks = True
+        book.company.logo_on_reports = True
+        if logo:
+            book.logo_png = LOGO
+        return book
+
+    def _reports(self, book, tag):
+        s, e = date(2026, 10, 5), date(2026, 10, 18)
+        reg = checks.render_register(book.payroll, book, OUT_DIR / f"brand_register_{tag}.pdf")
+        tc = checks.render_timecard(book.employees["E001"], book.entries_for("E001", s, e), s, e, book,
+                                    OUT_DIR / f"brand_timecard_{tag}.pdf")
+        book.company.check_layout = "handwrite"
+        hw = checks.render_checks(book.payroll, book, OUT_DIR / f"brand_handwrite_{tag}.pdf")
+        return reg, tc, hw
+
+    def test_preprinted_voucher_logo_only_on_stubs(self):
+        book = self._book("voucher", "preprinted")
+        p = checks.render_checks(book.payroll, book, OUT_DIR / "brand_voucher_preprinted.pdf")
+        self.assertPdf(p)
+        self.assertIn(b"/Subtype /Image", p.read_bytes())
+        self.assertEqual(_image_draws_per_page(p), [2, 2, 2])
+
+    def test_blank_voucher_logo_on_face_and_stubs(self):
+        book = self._book("voucher", "blank")
+        p = checks.render_checks(book.payroll, book, OUT_DIR / "brand_voucher_blank.pdf")
+        self.assertPdf(p)
+        self.assertEqual(_image_draws_per_page(p), [3, 3, 3])
+        book.company.logo_on_checks = False
+        p = checks.render_checks(book.payroll, book, OUT_DIR / "brand_voucher_nologo.pdf")
+        self.assertNotIn(b"/Subtype /Image", p.read_bytes())
+
+    def test_3up_faces_logo_only_on_blank_stock(self):
+        for layout in ("laser_3up", "manual_3up"):
+            with self.subTest(layout=layout):
+                book = self._book(layout, "preprinted")
+                p = checks.render_checks(book.payroll, book, OUT_DIR / f"brand_{layout}_pre.pdf")
+                self.assertNotIn(b"/Subtype /Image", p.read_bytes())
+                book.company.check_stock = "blank"
+                p = checks.render_checks(book.payroll, book, OUT_DIR / f"brand_{layout}_blank.pdf")
+                self.assertPdf(p)
+                self.assertEqual(_image_draws_per_page(p), [3])
+
+    def test_brand_color_never_on_check_face(self):
+        from reportlab.lib.colors import HexColor
+        from reportlab.lib.rl_accel import fp_str
+        col = HexColor("#00807F")
+        ops = fp_str(col.red, col.green, col.blue).encode()
+        book = self._book("laser_3up", "blank", color="#00807F")
+        p = checks.render_checks(book.payroll, book, OUT_DIR / "brand_face_color.pdf")
+        self.assertNotIn(ops, p.read_bytes())
+        # ...while the register header does use it
+        reg = checks.render_register(book.payroll, book, OUT_DIR / "brand_register_color.pdf")
+        self.assertIn(ops, reg.read_bytes())
+
+    def test_reports_have_logo(self):
+        for p in self._reports(self._book(), "logo"):
+            with self.subTest(p=p.name):
+                self.assertPdf(p)
+                self.assertIn(b"/Subtype /Image", p.read_bytes())
+
+    def test_reports_logo_switched_off(self):
+        book = self._book()
+        book.company.logo_on_reports = False
+        for p in self._reports(book, "off"):
+            self.assertNotIn(b"/Subtype /Image", p.read_bytes())
+
+    def test_no_logo_and_bad_color_anywhere(self):
+        book = self._book(logo=False, color="teal-ish")
+        for p in self._reports(book, "none"):
+            self.assertNotIn(b"/Subtype /Image", self.assertPdf(p).encode("latin-1"))
+        for layout in checks.LAYOUTS:
+            book.company.check_layout = layout
+            book.company.check_stock = "blank"
+            p = checks.render_checks(book.payroll, book, OUT_DIR / f"brand_none_{layout}.pdf")
+            self.assertNotIn(b"/Subtype /Image", p.read_bytes())
+            p = checks.render_alignment_test(book, OUT_DIR / f"brand_none_align_{layout}.pdf")
+            self.assertNotIn(b"/Subtype /Image", p.read_bytes())
+
+    def test_old_fake_book_without_logo_attr(self):
+        book = _make_book("blank")  # SimpleNamespace without logo_png
+        self.assertFalse(hasattr(book, "logo_png"))
+        book.company.check_layout = "voucher"
+        self.assertPdf(checks.render_checks(book.payroll, book, OUT_DIR / "brand_oldfake.pdf"))
+
+    def test_alignment_shows_logo_where_layout_would(self):
+        book = self._book("voucher", "preprinted")
+        p = checks.render_alignment_test(book, OUT_DIR / "brand_align_voucher.pdf")
+        self.assertEqual(_image_draws_per_page(p), [2])
+        book.company.check_layout = "laser_3up"
+        book.company.check_stock = "blank"
+        p = checks.render_alignment_test(book, OUT_DIR / "brand_align_laser.pdf")
+        self.assertEqual(_image_draws_per_page(p), [3])
+        book.company.check_layout = "handwrite"
+        p = checks.render_alignment_test(book, OUT_DIR / "brand_align_handwrite.pdf")
+        self.assertIn(b"/Subtype /Image", p.read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()
