@@ -1195,8 +1195,32 @@ def extract_fields(ocr_text_lines: Sequence[str] | str | OcrResult, *, known_ven
     return result
 
 
+def pdf_text_lines(path: str | os.PathLike) -> list[str]:
+    """The text a PDF already contains (emailed / downloaded receipts), page 1 then the rest; [] for a scanned PDF
+    (only pictures) or when pypdfium2 isn't available."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return []
+    try:
+        pdf = pdfium.PdfDocument(str(path))
+    except Exception:  # noqa: BLE001 - a damaged PDF simply has no readable text
+        return []
+    try:
+        text = "\n".join(page.get_textpage().get_text_range() for page in pdf)
+    finally:
+        pdf.close()
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return lines if sum(len(ln) for ln in lines) >= 40 else []
+
+
 def read_receipt(path: str | os.PathLike, *, language: str = "en-US", known_vendors: Iterable[str] = (),
                  backend: str | None = None) -> ReceiptFields:
-    """OCR a receipt file and extract its fields (the review screen shows ``needs_review()`` highlighted)."""
+    """Read a receipt file and extract its fields (the review screen shows ``needs_review()`` highlighted). A PDF that
+    already contains text is read directly (exact and fast); pictures and scanned PDFs go through OCR."""
+    if Path(path).suffix.lower() in PDF_SUFFIXES:
+        lines = pdf_text_lines(path)
+        if lines:
+            return extract_fields(lines, known_vendors=known_vendors)
     ocr = ocr_image(path, language=language, backend=backend)
     return extract_fields(ocr, known_vendors=known_vendors)

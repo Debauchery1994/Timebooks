@@ -154,6 +154,21 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(f.total.value, Decimal("20.75"))
         self.assertEqual(f.warnings, [])   # subtotal + tax now matches the total
 
+    def test_text_pdf_is_read_without_ocr(self) -> None:
+        from unittest import mock
+        from reportlab.pdfgen import canvas
+        with tempfile.TemporaryDirectory() as d:
+            pdf = Path(d) / "emailed.pdf"
+            c = canvas.Canvas(str(pdf))
+            for i, ln in enumerate(["ACME SUPPLY CO", "10/24/2026", "WIDGETS 19.48", "SUBTOTAL 19.48", "TAX 1.27",
+                                    "TOTAL 20.75"]):
+                c.drawString(72, 720 - 18 * i, ln)
+            c.save()
+            with mock.patch.object(ro, "ocr_image", side_effect=AssertionError("OCR must not run")):
+                f = ro.read_receipt(pdf)
+            self.assertEqual((f.total.value, f.tax.value, f.date.value), (Decimal("20.75"), Decimal("1.27"),
+                                                                          date(2026, 10, 24)))
+
     def test_not_money(self) -> None:
         for text in ("10.523 G @ $3.459/G", "TAX 8.25%", "10/24/26", "12:30", "VISA ****0042", "NO PRICE",
                      "PHONE 555 0143", "QTY 3"):

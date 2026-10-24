@@ -121,6 +121,14 @@ class ExpenseDialog(ModalDialog):
             messagebox.showwarning("Expense", "\n".join(problems), parent=self)
             return False
         self.repeats = w["repeats"].get()
+        probe = Expense(self.e.expense_id, d, vendor=vendor, amount=amount)
+        same = expenses.possible_duplicates(probe, self.book.expenses)
+        if same and not messagebox.askyesno(
+                "Possible duplicate", "This looks like an expense that's already entered:\n\n" + "\n".join(
+                    f"  {o.expense_date:%m/%d/%Y}  {o.vendor or '(no vendor)'}  {fmt_money(o.amount)}"
+                    + ("  (draft)" if o.status == "Draft" else "") for o in same[:5])
+                + "\n\nSave it anyway?", parent=self):
+            return False
         self.result = Expense(
             expense_id=self.e.expense_id, expense_date=d, vendor=vendor, category=category, amount=amount, tax=tax,
             payment_method=w["method"].get(), check_number=check if w["method"].get() == "Check" else None,
@@ -163,6 +171,14 @@ class ReceiptReviewDialog(ExpenseDialog):
                 "Fields marked \"check this\" weren't read for sure. " + " ".join(self.fields.warnings))
         ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=13, column=0, columnspan=3,
                                                                            sticky="w", pady=(6, 0))
+        probe = Expense(self.e.expense_id, self.e.expense_date, vendor=self.e.vendor, amount=self.e.amount)
+        same = expenses.possible_duplicates(probe, self.book.expenses)
+        if same:
+            o = same[0]
+            ttk.Label(right, text=f"⚠ Possible duplicate of {o.vendor or '(no vendor)'} {fmt_money(o.amount)} on "
+                      f"{o.expense_date:%m/%d/%Y}" + (" (draft)" if o.status == "Draft" else "")
+                      + ". If it's the same receipt, Cancel and delete this draft.", style="Warn.TLabel",
+                      wraplength=380).grid(row=15, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self.v_draft = tk.BooleanVar(value=False)
         ttk.Checkbutton(right, text="Keep as draft (review later; drafts aren't in the totals)",
                         variable=self.v_draft).grid(row=14, column=0, columnspan=3, sticky="w", pady=(6, 0))
@@ -583,8 +599,10 @@ class ExpensesTab(PinLockable, ttk.Frame):
         for e in items:
             paid = e.payment_method + (f" #{e.check_number}" if e.check_number else "")
             draft = e.status == "Draft"
+            dup = draft and bool(expenses.possible_duplicates(e, self.book.expenses))
             self.tree.insert("", "end", iid=e.expense_id, tags=("former",) if draft else (),
-                             values=(f"{e.expense_date:%m/%d/%Y}", e.vendor + ("  (draft)" if draft else ""),
+                             values=(f"{e.expense_date:%m/%d/%Y}",
+                                     e.vendor + ("  (draft)" if draft else "") + ("  ⚠ duplicate?" if dup else ""),
                                      e.category, fmt_money(e.amount), fmt_money(e.tax) if e.tax else "", paid,
                                      "Yes" if e.receipt_file else "", e.memo))
             total += 0 if draft else e.amount

@@ -133,6 +133,28 @@ def totals_by_category(expenses: list[Expense]) -> list[tuple[str, Decimal]]:
     return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
+def _vendor_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def possible_duplicates(e: Expense, items: list[Expense], days: int = 3) -> list[Expense]:
+    """Other expenses that look like the same purchase: the same amount within `days` days, and the same or a
+    similar vendor (one name contains the other, ignoring case and punctuation), or either has no vendor yet."""
+    if e.amount <= 0:
+        return []
+    mine = _vendor_key(e.vendor)
+    out = []
+    for o in items:
+        if o.expense_id == e.expense_id or o.amount != e.amount:
+            continue
+        if abs((o.expense_date - e.expense_date).days) > days:
+            continue
+        theirs = _vendor_key(o.vendor)
+        if not mine or not theirs or mine in theirs or theirs in mine:
+            out.append(o)
+    return out
+
+
 def vendors(expenses: list[Expense]) -> list[str]:
     """Vendor names already used, for typing suggestions (most used first)."""
     count: dict[str, int] = defaultdict(int)

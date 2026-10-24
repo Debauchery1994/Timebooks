@@ -46,6 +46,18 @@ class ExpenseRuleTests(unittest.TestCase):
         self.assertEqual(expenses.vendors(self.items)[0], "Home Depot")
 
 
+class DuplicateTests(unittest.TestCase):
+    def test_same_amount_close_date_similar_vendor(self) -> None:
+        items = [_exp(1, date(2026, 10, 3), "The Home Depot #4521", "Supplies", "84.17"),
+                 _exp(2, date(2026, 10, 3), "Shell", "Car & truck", "40.00")]
+        new = _exp(9, date(2026, 10, 5), "HOME DEPOT", "", "84.17")
+        self.assertEqual([o.expense_id for o in expenses.possible_duplicates(new, items)], ["X0001"])
+        self.assertEqual(expenses.possible_duplicates(_exp(9, date(2026, 10, 9), "Home Depot", "", "84.17"), items), [])
+        self.assertEqual(expenses.possible_duplicates(_exp(9, date(2026, 10, 3), "Lowes", "", "84.17"), items), [])
+        self.assertEqual(len(expenses.possible_duplicates(_exp(9, date(2026, 10, 3), "", "", "40.00"), items)), 1)
+        self.assertEqual(expenses.possible_duplicates(items[0], items), [])   # never itself
+
+
 class ReceiptFilingTests(unittest.TestCase):
     def test_receipt_is_copied_next_to_the_workbook_and_never_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as d:
