@@ -157,7 +157,7 @@ class YearLogTab(PinLockable, ttk.Frame):
             return ""   # the Time off column says what the day was
         if e.salary_hours is not None:
             return "hours entered"
-        pairs = [(a, b) for a, b in ((e.in1, e.out1), (e.in2, e.out2)) if a or b]
+        pairs = [(a, b) for a, b in ((e.in1, e.out1), (e.in2, e.out2), (e.in3, e.out3)) if a or b]
         return ", ".join(f"{calc.format_time(a) or '?'}–{calc.format_time(b) or '?'}" for a, b in pairs)
 
     def rows(self) -> list[list[str]]:

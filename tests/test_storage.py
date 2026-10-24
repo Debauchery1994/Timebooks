@@ -88,7 +88,7 @@ class StorageTests(unittest.TestCase):
         log = wb["TimeLog"]
         self.assertEqual([c.value for c in log[1]],
                          ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
-                          "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType"])
+                          "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType", "In3", "Out3"])
         self.assertEqual(log.freeze_panes, "A2")
         self.assertTrue(log["A1"].font.bold)
         # Sorted by date then id; Hours is the live formula.

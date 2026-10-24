@@ -117,13 +117,17 @@ class TimeEntry:
     # hours worked; a Closed day (business closed) is 0 hours. An hourly person's worked hours are always punches.
     salary_hours: Decimal | None = None
     hours_type: str = "Worked"   # Worked | PTO | Holiday | Sick | Closed
+    # A third In/Out pair for extra breaks (1.3.2); last, so existing positional use keeps working.
+    in3: time | None = None
+    out3: time | None = None
 
     @property
     def key(self) -> tuple[str, date]:
         return (self.employee_id, self.work_date)
 
     def is_empty(self) -> bool:
-        return not any((self.in1, self.out1, self.in2, self.out2, self.lunch_deduct_min, self.notes)) \
+        return not any((self.in1, self.out1, self.in2, self.out2, self.in3, self.out3, self.lunch_deduct_min,
+                        self.notes)) \
             and self.salary_hours is None and (self.hours_type or "").strip().lower() in ("", "worked")
 
 

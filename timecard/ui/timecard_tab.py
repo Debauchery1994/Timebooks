@@ -40,7 +40,7 @@ class TimeCardTab(PinLockable, ttk.Frame):
     pin_what = "Time cards"
     pin_purpose = "enter or view hours"
 
-    TIME_FIELDS = ("in1", "out1", "in2", "out2")
+    TIME_FIELDS = ("in1", "out1", "in2", "out2", "in3", "out3")
 
     def __init__(self, master, app: "App"):
         super().__init__(master, padding=12)
@@ -225,7 +225,7 @@ class TimeCardTab(PinLockable, ttk.Frame):
         # Everyone gets a Type box (Worked / PTO / Holiday / Sick / Closed). Salaried people type their hours; for
         # hourly people worked hours are the punches and the hours box is only for a time off day's hours.
         salaried = self._salaried = emp is not None and is_salaried(emp)
-        heads = ["Day / Date", "In", "Out", "In", "Out", "Lunch Deduct (min)", "",
+        heads = ["Day / Date"] + ["In", "Out"] * (len(self.TIME_FIELDS) // 2) + ["Lunch Deduct (min)", "",
                  "Salary hours" if salaried else "Time off hrs", "Type", "Hours", "Notes"]
         c_hours, c_notes, ncols = len(heads) - 2, len(heads) - 1, len(heads)
         for c, h in enumerate(heads):
@@ -265,19 +265,20 @@ class TimeCardTab(PinLockable, ttk.Frame):
             sp = ttk.Spinbox(g, from_=0, to=240, increment=5, width=5, justify="center",
                              command=lambda rw=row: self._commit_lunch(rw))
             sp.set(str(entry.lunch_deduct_min or 0))
-            sp.grid(row=r, column=5, padx=3, pady=2, sticky="w")
+            c_lunch = len(self.TIME_FIELDS) + 1   # the columns after the punch pairs
+            sp.grid(row=r, column=c_lunch, padx=3, pady=2, sticky="w")
             self._bind_cell(sp, idx, lambda rw=row: self._commit_lunch(rw))
             row.lunch = sp
             b = ttk.Button(g, text="+Lunch", width=7, takefocus=0, style="Small.TButton",
                            command=lambda rw=row: self._add_lunch(rw))
-            b.grid(row=r, column=6, padx=(0, 6), pady=2)
+            b.grid(row=r, column=c_lunch + 1, padx=(0, 6), pady=2)
             se = tk.Entry(g, width=7, font=F("base"), relief="flat", bd=1, justify="center")
             paint_cell(se)
-            se.grid(row=r, column=7, padx=3, pady=2, ipady=2)
+            se.grid(row=r, column=c_lunch + 2, padx=3, pady=2, ipady=2)
             self._bind_cell(se, idx, lambda rw=row, w=se: self._commit_salary_hours(rw, w))
             row.salary = se
             kb = ttk.Combobox(g, values=list(calc.HOURS_TYPES), state="readonly", width=8)
-            kb.grid(row=r, column=8, padx=3, pady=2, sticky="w")
+            kb.grid(row=r, column=c_lunch + 3, padx=3, pady=2, sticky="w")
             kb.bind("<<ComboboxSelected>>", lambda ev, rw=row, w=kb: self._choose_type(rw, w.get()))
             row.kind = kb
             self._fill_hours_type(row, entry)
@@ -510,10 +511,10 @@ class TimeCardTab(PinLockable, ttk.Frame):
         if row is None:
             return
         prev = self.book.get_entry(row.eid, row.d - timedelta(days=1))
-        if not any((prev.in1, prev.out1, prev.in2, prev.out2)) and prev.salary_hours is None:
+        if not any(getattr(prev, f) for f in self.TIME_FIELDS) and prev.salary_hours is None:
             self.app.status(f"Nothing to copy: {row.d - timedelta(days=1):%a %m/%d} has no hours.", error=True)
             return
-        self._update_entry(row, in1=prev.in1, out1=prev.out1, in2=prev.in2, out2=prev.out2,
+        self._update_entry(row, **{f: getattr(prev, f) for f in self.TIME_FIELDS},
                            lunch_deduct_min=prev.lunch_deduct_min, salary_hours=prev.salary_hours,
                            hours_type=prev.hours_type)
         self._fill_row(row)

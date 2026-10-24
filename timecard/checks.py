@@ -1011,11 +1011,11 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
     company = book.company
     by_date = {e.work_date: e for e in entries
                if e.employee_id == employee.employee_id and start <= e.work_date <= end}
-    header = ["Date", "In", "Out", "In", "Out", "Lunch\nDeduct (min)", "Hours", "Notes"]
+    header = ["Date", "In", "Out", "In", "Out", "In", "Out", "Lunch\nDeduct (min)", "Hours", "Notes"]
     data = [header]
     style = _table_style(company) + [
-        ("ALIGN", (1, 0), (6, -1), "CENTER"),
-        ("ALIGN", (6, 1), (6, -1), "RIGHT"),
+        ("ALIGN", (1, 0), (8, -1), "CENTER"),
+        ("ALIGN", (8, 1), (8, -1), "RIGHT"),
         ("GRID", (0, 0), (-1, -1), 0.3, LIGHT),
         ("BOX", (0, 0), (-1, -1), 0.8, INK),
         ("TOPPADDING", (0, 1), (-1, -1), 4),
@@ -1026,11 +1026,11 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
     cur_week = None
 
     def add_subtotal(ws: date):
-        data.append([f"Week of {_date(ws)}", "", "", "", "", "Week total", _hours(week_total), ""])
+        data.append([f"Week of {_date(ws)}", "", "", "", "", "", "", "Week total", _hours(week_total), ""])
         i = len(data) - 1
         style.extend([("BACKGROUND", (0, i), (-1, i), _brand(company)[1]),
                       ("FONT", (0, i), (-1, i), "Helvetica-Bold", 8),
-                      ("SPAN", (0, i), (4, i)),
+                      ("SPAN", (0, i), (6, i)),
                       ("LINEABOVE", (0, i), (-1, i), 0.6, INK)])
 
     for d in _daterange(start, end):
@@ -1052,11 +1052,12 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
                 note = "Hours entered" + (f"; {e.notes}" if e.notes else "")
             row = [d.strftime("%a %m/%d/%Y"), calc.format_time(e.in1), calc.format_time(e.out1),
                    calc.format_time(e.in2), calc.format_time(e.out2),
+                   calc.format_time(e.in3), calc.format_time(e.out3),
                    str(e.lunch_deduct_min) if e.lunch_deduct_min else "",
                    _hours(hrs) if (hrs or e.in1 or e.out1 or e.salary_hours is not None or calc.is_closed(e)) else "",
                    Paragraph(_esc(note), notes_style) if note else ""]
         else:
-            row = [d.strftime("%a %m/%d/%Y"), "", "", "", "", "", "", ""]
+            row = [d.strftime("%a %m/%d/%Y"), "", "", "", "", "", "", "", "", ""]
         data.append(row)
         if d.weekday() >= 5:
             style.append(("TEXTCOLOR", (0, len(data) - 1), (0, len(data) - 1), GREY))
@@ -1064,7 +1065,7 @@ def render_timecard(employee: Employee, entries: list[TimeEntry], start: date, e
         add_subtotal(cur_week)
 
     summary = calc.summarize_hours(list(by_date.values()), company, start, end)
-    widths = [1.15, 0.72, 0.72, 0.72, 0.72, 0.8, 0.6, 2.07]
+    widths = [1.05, 0.62, 0.62, 0.62, 0.62, 0.62, 0.62, 0.6, 0.55, 1.58]   # 7.5" across
     tbl = Table(data, colWidths=[w * inch for w in widths], repeatRows=1)
     tbl.setStyle(TableStyle(style))
 

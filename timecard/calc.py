@@ -141,7 +141,7 @@ def entry_hours(e: TimeEntry) -> Decimal:
         return ZERO
     if e.salary_hours is not None:
         return _hours2(max(Decimal(str(e.salary_hours)), ZERO))
-    secs = _pair_seconds(e.in1, e.out1) + _pair_seconds(e.in2, e.out2)
+    secs = _pair_seconds(e.in1, e.out1) + _pair_seconds(e.in2, e.out2) + _pair_seconds(e.in3, e.out3)
     secs -= int(e.lunch_deduct_min or 0) * 60
     return _hours2(Decimal(max(secs, 0)) / 3600)
 

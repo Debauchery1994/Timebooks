@@ -35,7 +35,7 @@ FMT_HOURS = "0.00"
 EMPLOYEE_HEADERS = ["EmployeeID", "FirstName", "LastName", "Address1", "Address2",
                     "PayType", "PayRate", "Active", "Notes", "SalaryBasis"]
 TIMELOG_HEADERS = ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
-                   "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType"]
+                   "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType", "In3", "Out3"]
 PAYROLL_HEADERS = ["CheckNumber", "CheckDate", "PeriodStart", "PeriodEnd", "EmployeeID", "Employee",
                    "RegularHours", "OvertimeHours", "RegularPay", "OvertimePay", "GrossPay",
                    "FederalTax", "StateTax", "SocialSecurity", "Medicare", "OtherDeductions",
@@ -62,13 +62,16 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   3 = 1.2.0: Payroll LeaveHours / LeavePay, the Closed day type, Company time off, Features and Locked by PIN keys
 #   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
-SCHEMA_VERSION = 5
+#   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair)
+SCHEMA_VERSION = 6
 META_KEYS = ("schema_version", "app_version")
 
-# Hours WORKED (column I): 0 for PTO/Holiday/Sick (L); the typed salary hours (K) when set; else the punches.
+# Hours WORKED (column I): 0 for PTO/Holiday/Sick/Closed (L); the typed salary hours (K) when set; else the three
+# punch pairs (D-E, F-G, and M-N, the third pair added at the end in 1.3.2) less the lunch deduct.
 HOURS_FORMULA = ('=IF(AND(L{r}<>"",L{r}<>"Worked"),0,IF(K{r}<>"",MAX(0,ROUND(K{r},2)),'
                  'MAX(0,ROUND((IF(AND(D{r}<>"",E{r}<>""),MOD(E{r}-D{r},1),0)'
-                 '+IF(AND(F{r}<>"",G{r}<>""),MOD(G{r}-F{r},1),0))*24-H{r}/60,2))))')
+                 '+IF(AND(F{r}<>"",G{r}<>""),MOD(G{r}-F{r},1),0)'
+                 '+IF(AND(M{r}<>"",N{r}<>""),MOD(N{r}-M{r},1),0))*24-H{r}/60,2))))')
 
 
 def _salary_hours(v: Any) -> Decimal | None:
@@ -407,6 +410,8 @@ class TimecardBook:
             out1=_to_time(r.get("out1")),
             in2=_to_time(r.get("in2")),
             out2=_to_time(r.get("out2")),
+            in3=_to_time(r.get("in3")),
+            out3=_to_time(r.get("out3")),
             lunch_deduct_min=max(_to_int(r.get("lunchdeductmin")), 0),
             notes=_text(r.get("notes")),
             salary_hours=_salary_hours(r.get("salaryhours")),
@@ -575,7 +580,7 @@ class TimecardBook:
             _fmt_row(ws, ws.max_row, {7: FMT_MONEY})
 
     def _write_timelog(self, ws: Worksheet) -> None:
-        _write_header(ws, TIMELOG_HEADERS, [16, 12, 22, 11, 11, 11, 11, 15, 8, 30, 12, 11])
+        _write_header(ws, TIMELOG_HEADERS, [16, 12, 22, 11, 11, 11, 11, 15, 8, 30, 12, 11, 11, 11])
         for entry in sorted(self.entries.values(), key=lambda e: (e.work_date, e.employee_id)):
             r = ws.max_row + 1
             emp = self.employees.get(entry.employee_id)
@@ -583,9 +588,10 @@ class TimecardBook:
                        entry.in1, entry.out1, entry.in2, entry.out2,
                        int(entry.lunch_deduct_min or 0), HOURS_FORMULA.format(r=r), entry.notes,
                        float(entry.salary_hours) if entry.salary_hours is not None else None,
-                       "" if calc.hours_type(entry) == "Worked" else calc.hours_type(entry)])
+                       "" if calc.hours_type(entry) == "Worked" else calc.hours_type(entry),
+                       entry.in3, entry.out3])
             _fmt_row(ws, r, {1: FMT_DAY_DATE, 4: FMT_TIME, 5: FMT_TIME, 6: FMT_TIME, 7: FMT_TIME,
-                             9: FMT_HOURS, 11: FMT_HOURS})
+                             9: FMT_HOURS, 11: FMT_HOURS, 13: FMT_TIME, 14: FMT_TIME})
 
     def _write_payroll(self, ws: Worksheet) -> None:
         _write_header(ws, PAYROLL_HEADERS, [12, 12, 12, 12, 12, 22] + [13] * 11 + [24, 8, 12, 12])

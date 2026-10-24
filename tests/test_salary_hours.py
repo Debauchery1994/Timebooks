@@ -65,6 +65,25 @@ class SalaryHoursCalcTests(unittest.TestCase):
         self.assertTrue(TimeEntry(MON, "E1", hours_type="Worked").is_empty())
 
 
+class ThirdPairTests(unittest.TestCase):
+    def test_three_pairs_count_round_trip_and_the_formula_includes_them(self) -> None:
+        e = TimeEntry(MON, "E1", time(8), time(10), time(10, 15), time(12), lunch_deduct_min=0,
+                      in3=time(13), out3=time(17))
+        self.assertEqual(calc.day_hours(e), D("7.75"))
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "b.xlsx"
+            b = TimecardBook.new(Company(year=2026))
+            b.upsert_employee(Employee("E1", "Ann", "Lee"))
+            b.set_entry(e)
+            b.save(path)
+            got = TimecardBook.load(path).entries[("E1", MON)]
+            self.assertEqual((got.in3, got.out3), (time(13), time(17)))
+            import openpyxl
+            ws = openpyxl.load_workbook(path)["TimeLog"]
+            self.assertIn("M2", ws["I2"].value)   # the Hours formula counts the third pair too
+            self.assertFalse(TimeEntry(MON, "E1", in3=time(9)).is_empty())
+
+
 class SalaryHoursStorageTests(unittest.TestCase):
     def test_round_trip_and_older_workbooks(self) -> None:
         with tempfile.TemporaryDirectory() as d:
