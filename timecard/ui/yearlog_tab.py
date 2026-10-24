@@ -11,12 +11,17 @@ from typing import TYPE_CHECKING
 from ..models import TimeEntry
 from .. import calc
 from .common import MONTHS, MONTH_NAMES, documents_dir, fmt_hours, fmt_money, safe_filename, style_tree
+from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
 
 
-class YearLogTab(ttk.Frame):
+class YearLogTab(PinLockable, ttk.Frame):
+    pin_key = "yearlog"
+    pin_what = "Year Log records"
+    pin_purpose = "view the year's hours"
+
     """One row per pay period and employee: hours worked, lunch deducted and that period's notes. Expand a row
     for its days. Filter by employee and month; click a column heading to sort."""
 

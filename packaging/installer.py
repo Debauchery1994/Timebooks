@@ -385,7 +385,7 @@ def gui(mode: str) -> None:
     book_box.pack(fill="x", pady=(12, 0))
     company_var, book_hint = tk.StringVar(), tk.StringVar()
 
-    pin_box = ttk.LabelFrame(frm, text="Employee records PIN", padding=10)
+    pin_box = ttk.LabelFrame(frm, text="PIN (for Company Settings and any tabs you lock)", padding=10)
     pin_box.pack(fill="x", pady=(12, 0))
     pin_var, confirm_var = tk.StringVar(), tk.StringVar()
     question_var = tk.StringVar(value=security.SECURITY_QUESTIONS[0])

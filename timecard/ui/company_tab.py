@@ -12,13 +12,18 @@ from .. import branding, calc
 from .common import (
     CHECK_LAYOUTS, F, MANUAL_FIELDS, P, ScrollFrame, _appearance, is_salaried, logo_photo, scaled, tag_role,
 )
-from .pin import LockOverlay
+from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
 
 
-class CompanyTab(ttk.Frame):
+class CompanyTab(PinLockable, ttk.Frame):
+    pin_key = ""   # always locked: the Locked by PIN switches and bank numbers live here
+    pin_what = "Company settings"
+    pin_purpose = "view or change company, bank and check settings"
+    pin_locked_by_default = True
+
     # (section, field, label, kind, options)
     FIELDS = [
         ("Company", "company_name", "Company name", "str", None),
@@ -61,6 +66,10 @@ class CompanyTab(ttk.Frame):
         ("Branding", "logo_on_checks", "Checks", "bool", "Show logo on checks (stubs; check face only on blank stock)"),
         ("Branding", "logo_on_reports", "Reports", "bool",
          "Show logo on reports (time cards, register, annual statements)"),
+        ("Locked by PIN", "lock_timecard", "Time Card", "bool", "Lock the Time Card tab"),
+        ("Locked by PIN", "lock_employees", "Employees", "bool", "Lock the Employees tab"),
+        ("Locked by PIN", "lock_yearlog", "Year Log", "bool", "Lock the Year Log tab"),
+        ("Locked by PIN", "lock_payroll", "Pay & Checks", "bool", "Lock the Pay & Checks tab"),
         ("Advanced", "federal_withholding_pct", "Federal withholding %", "float", None),
         ("Advanced", "state_withholding_pct", "State withholding %", "float", None),
         ("Advanced", "social_security_pct", "Social Security %", "float", None),
@@ -82,7 +91,7 @@ class CompanyTab(ttk.Frame):
         body = sf.inner
         frames: dict[str, ttk.Frame] = {}
         layout = {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1), "Checks": (1, 1),
-                  "Time off": (2, 1)}
+                  "Time off": (2, 1), "Locked by PIN": (3, 0)}
         rows: dict[str, int] = {}
         for section, (r, c) in layout.items():
             lf = ttk.LabelFrame(body, text=section, padding=12)
@@ -95,7 +104,7 @@ class CompanyTab(ttk.Frame):
 
         # collapsed "Advanced" group for the (unused for contractors) withholding percentages
         adv_outer = ttk.Frame(body, padding=(6, 4))
-        adv_outer.grid(row=3, column=0, columnspan=2, sticky="ew")
+        adv_outer.grid(row=4, column=0, columnspan=2, sticky="ew")
         self.section_frames = frames
         self.adv_outer = adv_outer
         self._sections_single = None
@@ -200,6 +209,11 @@ class CompanyTab(ttk.Frame):
         ttk.Label(frames["Pay"], text="Contractors: leave overtime off so every hour is paid at the same rate.",
                   style="Muted.TLabel", wraplength=360).grid(row=rows["Pay"], column=0, columnspan=2, sticky="w",
                                                              pady=(8, 0))
+        ttk.Label(frames["Locked by PIN"], style="Muted.TLabel", wraplength=420, justify="left",
+                  text="Locked tabs ask for the PIN set up when TimeCard Pro was installed (File > Change PIN to "
+                       "change it) and lock again when you leave them or after 5 minutes. Company Settings is "
+                       "always locked.").grid(row=rows["Locked by PIN"], column=0, columnspan=2, sticky="w",
+                                              pady=(8, 0))
         ttk.Label(frames["Checks"], text="Check stock, MICR font and offsets apply to the printed layouts.",
                   style="Muted.TLabel", wraplength=360).grid(row=rows["Checks"], column=0, columnspan=2,
                                                              sticky="w", pady=(8, 0))
@@ -208,32 +222,18 @@ class CompanyTab(ttk.Frame):
         btns.pack(fill="x")
         ttk.Button(btns, text="Save Settings", style="Accent.TButton", command=self.save).pack(side="right")
         ttk.Button(btns, text="Revert", command=self.refresh).pack(side="right", padx=6)
-        self.locked = False
-        self.overlay = LockOverlay(self, self.unlock, what="Company settings",
-                                   purpose="view or change company, bank and check settings")
-        self.lock()
 
     # ----- PIN lock (bank account and routing numbers live here)
-    def lock(self) -> None:
-        """Take the settings off the screen (not just covered, so Tab can't reach them) behind the PIN."""
-        self.locked = True
+    def on_pin_lock(self) -> None:
         self._kept_edits = self.form_changed()   # unsaved edits stay (hidden) until the PIN is entered again
-        self.sf.pack_forget()
-        self.btns.pack_forget()
-        self.overlay.show()
 
-    def unlock(self) -> None:
-        self.locked = False
-        self.overlay.place_forget()
-        self.sf.pack(fill="both", expand=True)
-        self.btns.pack(fill="x")
+    def on_pin_unlock(self, quiet: bool) -> None:
         if getattr(self, "_kept_edits", False) and self.form_changed():
             self.app.status("Your unsaved changes to company settings were kept. Click Save Settings to keep them.")
         else:
             self.refresh()
-            self.app.status("Company settings unlocked. They lock again when you leave this tab.")
+            super().on_pin_unlock(quiet)
         self._kept_edits = False
-        self.app.note_activity()
 
     def form_changed(self) -> bool:
         """True if the form holds edits that haven't been saved to the workbook with Save Settings."""
@@ -339,15 +339,15 @@ class CompanyTab(ttk.Frame):
         self._sections_single = single
         f = self.section_frames
         if single:
-            order = ("Company", "Bank", "Branding", "Pay", "Time off", "Checks")
+            order = ("Company", "Bank", "Branding", "Pay", "Time off", "Checks", "Locked by PIN")
             for i, name in enumerate(order):
                 f[name].grid_configure(row=i, column=0)
             self.adv_outer.grid_configure(row=len(order), column=0, columnspan=1)
         else:
             for name, (r, c) in {"Company": (0, 0), "Bank": (1, 0), "Branding": (2, 0), "Pay": (0, 1),
-                                 "Checks": (1, 1), "Time off": (2, 1)}.items():
+                                 "Checks": (1, 1), "Time off": (2, 1), "Locked by PIN": (3, 0)}.items():
                 f[name].grid_configure(row=r, column=c)
-            self.adv_outer.grid_configure(row=3, column=0, columnspan=2)
+            self.adv_outer.grid_configure(row=4, column=0, columnspan=2)
 
     def _update_layout_state(self) -> None:
         manual = self.vars.get("check_layout") is not None and self.vars["check_layout"].get() == "manual_3up"
@@ -474,6 +474,7 @@ class CompanyTab(ttk.Frame):
             self.app.mark_dirty()
             self.app.refresh_all()
             self.app.refresh_branding()
+            self.app.apply_pin_locks()
             self.app.status(f"Company settings updated.{self.app.save_hint()}")
         else:
             self.app.status("No changes to company settings.")

@@ -74,6 +74,8 @@ class App(tk.Tk):
                           (self.yearlog_tab, "Year Log"), (self.payroll_tab, "Pay & Checks"),
                           (self.company_tab, "Company Settings")):
             self.nb.add(tab, text=f"  {text}  ")
+        for tab in self.lockable_tabs:
+            tab.init_pin_lock()
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         self.welcome = self._build_welcome(self.body)
         self._show_book_ui(False)
@@ -227,7 +229,7 @@ class App(tk.Tk):
         fm.add_separator()
         fm.add_command(label="Change PIN\u2026", command=self.change_pin)
         fm.add_command(label="Change Security Question\u2026", command=self.change_security_question)
-        fm.add_command(label="Lock Employees and Company Settings", command=self.lock_employees)
+        fm.add_command(label="Lock PIN-Protected Tabs Now", command=self.lock_pin_tabs)
         fm.add_separator()
         fm.add_command(label="Exit", command=self.exit)
         menubar.add_cascade(label="File", menu=fm)
@@ -461,6 +463,7 @@ class App(tk.Tk):
         self.employees_tab.selected = None
         self.refresh_all(keep_selection=False)
         self.refresh_branding()
+        self.apply_pin_locks(lock_current=True)
         if book.path:
             self.settings.add_recent(book.path)
             self._rebuild_recent()
@@ -508,22 +511,40 @@ class App(tk.Tk):
         self._last_activity = _time.monotonic()
 
     @property
-    def pin_tabs(self) -> tuple:
-        """Tabs behind the PIN."""
-        return self.employees_tab, self.company_tab
+    def lockable_tabs(self) -> tuple:
+        return self.timecard_tab, self.employees_tab, self.yearlog_tab, self.payroll_tab, self.company_tab
+
+    @property
+    def pin_tabs(self) -> list:
+        """Tabs behind the PIN: the ones locked in Company Settings > Locked by PIN, and Company Settings."""
+        company = self.book.company if self.book is not None else Company()
+        return [t for t in self.lockable_tabs if t.pin_required(company)]
+
+    def apply_pin_locks(self, lock_current: bool = False) -> None:
+        """Match the tabs to the Locked by PIN settings: lock newly locked tabs (the open one too when a workbook
+        is opened, not while the owner is changing the settings) and open tabs that are no longer locked."""
+        current = self.nb.nametowidget(self.nb.select()) if self.nb.select() else None
+        required = self.pin_tabs
+        for tab in self.lockable_tabs:
+            if tab in required and not tab.locked and (lock_current or tab is not current):
+                tab.lock()
+            elif tab not in required and tab.locked:
+                tab.unlock(quiet=True)
+        if current in required and current.locked:
+            current.overlay.focus_pin()
 
     def _idle_check(self) -> None:
         open_tabs = [t for t in self.pin_tabs if not t.locked]
         if open_tabs and _time.monotonic() - self._last_activity >= IDLE_LOCK_SECONDS:
             for tab in open_tabs:
                 tab.lock()
-            self.status("Employee records and company settings locked after 5 minutes of inactivity.")
+            self.status("Locked tabs locked again after 5 minutes of inactivity.")
         self._idle_job = self.after(10_000, self._idle_check)
 
-    def lock_employees(self) -> None:
+    def lock_pin_tabs(self) -> None:
         for tab in self.pin_tabs:
             tab.lock()
-        self.status("Employee records and company settings locked.")
+        self.status("Locked tabs locked.")
 
     def change_pin(self) -> None:
         if not security.has_pin():

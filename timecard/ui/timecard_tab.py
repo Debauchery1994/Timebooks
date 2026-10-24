@@ -15,6 +15,7 @@ from ..storage import TimecardBook
 from .common import (
     F, FlowFrame, ScrollFrame, fmt_hours, fmt_period, is_salaried, open_file, paint_cell, period_index_for, set_invalid,
 )
+from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
@@ -34,7 +35,11 @@ class _DayRow:
         self.day_lbl: ttk.Label | None = None
 
 
-class TimeCardTab(ttk.Frame):
+class TimeCardTab(PinLockable, ttk.Frame):
+    pin_key = "timecard"
+    pin_what = "Time cards"
+    pin_purpose = "enter or view hours"
+
     TIME_FIELDS = ("in1", "out1", "in2", "out2")
 
     def __init__(self, master, app: "App"):

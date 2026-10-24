@@ -12,7 +12,7 @@ from .. import calc, statements
 from ..storage import TimecardBook
 from .common import F, ModalDialog, is_salaried, open_file, parse_money, pay_type_label, salary_amount_text, style_tree
 from .dialogs import BackupDialog, ExportStatementsDialog
-from .pin import LockOverlay
+from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
@@ -76,7 +76,12 @@ class PayRateDialog(ModalDialog):
         return True
 
 
-class EmployeesTab(ttk.Frame):
+class EmployeesTab(PinLockable, ttk.Frame):
+    pin_key = "employees"
+    pin_what = "Employee records"
+    pin_purpose = "view or edit team members"
+    pin_locked_by_default = True
+
     def __init__(self, master, app: "App"):
         super().__init__(master, padding=12)
         self.app = app
@@ -164,9 +169,6 @@ class EmployeesTab(ttk.Frame):
         ttk.Button(form, text="Set Pay Rate\u2026", command=self.set_pay_rate).grid(row=r, column=0, columnspan=2,
                                                                                 sticky="ew", pady=(8, 0))
         self.clear_form()
-        self.locked = True
-        self.overlay = LockOverlay(self, self.unlock)
-        self.overlay.show()
 
     def open_backup(self) -> None:
         if self.app.book is None or self.locked:
@@ -199,20 +201,15 @@ class EmployeesTab(ttk.Frame):
             open_file(pdf)
 
     # ----- PIN lock
-    def lock(self) -> None:
-        """Hide all employee details behind the PIN overlay."""
-        self.locked = True
+    def on_pin_lock(self) -> None:
+        """Clear all employee details as well as hiding them."""
         self.clear_form()
         self.tree.delete(*self.tree.get_children())
         self.v_count.set("")
-        self.overlay.show()
 
-    def unlock(self) -> None:
-        self.locked = False
-        self.overlay.place_forget()
+    def on_pin_unlock(self, quiet: bool) -> None:
         self.refresh()
-        self.app.note_activity()
-        self.app.status("Employee records unlocked. They lock again when you leave this tab.")
+        super().on_pin_unlock(quiet)
 
     @property
     def book(self):

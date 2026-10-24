@@ -20,7 +20,7 @@ class ChangePinDialog(ModalDialog):
         super().__init__(master, "Change PIN")
 
     def body(self, f):
-        ttk.Label(f, text=f"The PIN protects the Employees tab ({security.MIN_LEN}-{security.MAX_LEN} digits).",
+        ttk.Label(f, text=f"The PIN protects the locked tabs ({security.MIN_LEN}-{security.MAX_LEN} digits).",
                   style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
         self.e_cur = ttk.Entry(f, show="•", width=14)
         self.e_new = ttk.Entry(f, show="•", width=14)
@@ -163,6 +163,59 @@ class SecurityQuestionDialog(ModalDialog):
             return False
         self.result = True
         return True
+
+
+class PinLockable:
+    """Mixin for a tab that can be locked behind the app's one PIN. Locking takes everything in the tab off the
+    screen (not just covered, so Tab can't reach it) and shows the PIN screen; unlocking puts it all back.
+
+    `pin_key` names the Company setting `lock_<key>` that turns the lock on ("" = always locked, for Company
+    Settings). Tabs hook `on_pin_lock` (e.g. clear what they show) and `on_pin_unlock` (refresh)."""
+
+    pin_key = ""
+    pin_what = "This tab"            # finishes "... are locked"
+    pin_purpose = "open this tab"    # finishes "Enter the PIN to ..."
+    pin_locked_by_default = False    # before a workbook's settings are known
+    locked = False
+
+    def init_pin_lock(self) -> None:
+        self.overlay = LockOverlay(self, self.unlock, what=self.pin_what, purpose=self.pin_purpose)
+        self._pin_hidden: list = []
+        if self.pin_locked_by_default:
+            self.lock()
+
+    def pin_required(self, company) -> bool:
+        return not self.pin_key or bool(getattr(company, f"lock_{self.pin_key}", False))
+
+    def lock(self) -> None:
+        if self.locked:
+            self.overlay.show()
+            return
+        self.locked = True
+        self.on_pin_lock()
+        self._pin_hidden = [(w, "pack", w.pack_info()) for w in self.pack_slaves()] + \
+                           [(w, "grid", None) for w in self.grid_slaves()]
+        for w, how, _info in self._pin_hidden:
+            w.pack_forget() if how == "pack" else w.grid_remove()
+        self.overlay.show()
+
+    def unlock(self, quiet: bool = False) -> None:
+        if not self.locked:
+            return
+        self.locked = False
+        self.overlay.place_forget()
+        for w, how, info in self._pin_hidden:
+            w.pack(**info) if how == "pack" else w.grid()
+        self._pin_hidden = []
+        self.on_pin_unlock(quiet)
+        self.app.note_activity()
+
+    def on_pin_lock(self) -> None:
+        pass
+
+    def on_pin_unlock(self, quiet: bool) -> None:
+        if not quiet:
+            self.app.status(f"{self.pin_what} unlocked. They lock again when you leave this tab.")
 
 
 class LockOverlay(ttk.Frame):
@@ -332,7 +385,7 @@ class LockOverlay(ttk.Frame):
         if not security.has_recovery():
             messagebox.showinfo(
                 "Forgot PIN", "No security question was set up, so the PIN cannot be recovered.\n\n"
-                "Employee records can only be opened with the PIN. Once you are in, use "
+                "Locked tabs can only be opened with the PIN. Once you are in, use "
                 "File > Change Security Question\u2026 so this can't happen again.", parent=self)
             return
         if ForgotPinDialog(self).show():

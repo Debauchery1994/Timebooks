@@ -45,6 +45,12 @@ class Company:
     pto_paid: bool = True
     holiday_paid: bool = True
     sick_paid: bool = True
+    # Tabs the owner has put behind the PIN (Company Settings > Locked by PIN). Company Settings itself is always
+    # locked, since these switches live there. There is one PIN for the whole app, set up when it was installed.
+    lock_timecard: bool = False
+    lock_employees: bool = True
+    lock_yearlog: bool = False
+    lock_payroll: bool = False
     # Branding. The logo image itself is stored by storage.py on a hidden "Branding" sheet (TimecardBook.logo_png).
     brand_color: str = "#1F3A5F"
     logo_on_checks: bool = True   # voucher stubs; the check face too on blank stock only

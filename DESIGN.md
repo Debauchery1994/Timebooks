@@ -42,7 +42,8 @@ Keys (match `models.Company` field names exactly, snake_case):
 year, next_check_number, pay_period, week_start, default_lunch_minutes, overtime_threshold_weekly,
 overtime_multiplier, federal_withholding_pct, state_withholding_pct, social_security_pct,
 medicare_pct, check_stock, micr_font_path, print_offset_x, print_offset_y, signature_line_text` (plus every later
-`models.Company` field, e.g. `pay_hold_back`, the branding keys and the time off keys `pto_hours` … `sick_paid`).
+`models.Company` field, e.g. `pay_hold_back`, the branding keys, the time off keys `pto_hours` … `sick_paid`, and
+the Locked by PIN keys `lock_timecard`, `lock_employees` (default on), `lock_yearlog`, `lock_payroll`).
 
 Then two rows that aren't settings: `schema_version` (`storage.SCHEMA_VERSION`: 1 = 1.1.0–1.1.1, no marker;
 2 = 1.1.2; 3 = 1.2.0) and `app_version` (the version that saved the file). Bump `SCHEMA_VERSION` whenever a sheet or
@@ -309,3 +310,15 @@ stored (collect W-9s).
   pay, overtime, the Year Log, monthly summary, statements and memos count; `calc.leave_hours` = time off. The TimeLog
   `Hours` formula follows the same rule (verified in GridCraft). Time Card footer shows Time off; Year Log has a Time
   off column ("PTO 8.00, Sick 4.00"); the printed time card notes the time off. Salaried pay never depends on hours.
+
+## Locked by PIN (Company Settings)
+- One PIN for the whole app, set up by Setup (the lock screen can create it only if none exists, e.g. a silent install
+  without `--pin`). File > Change PIN changes that one PIN.
+- Company Settings > Locked by PIN has a box per tab (Time Card, Employees, Year Log, Pay & Checks), stored as
+  `Company.lock_<tab>`; Employees is on by default (and for older workbooks). Company Settings is always locked, since
+  the switches and bank numbers live there.
+- `ui/pin.py: PinLockable` is the one lock every tab uses: locking takes the tab's widgets off the screen (so Tab can't
+  reach them) and shows the PIN screen; unlocking puts them back. Tabs hook `on_pin_lock` / `on_pin_unlock`.
+- A locked tab locks again when you leave it, after 5 idle minutes, and with File > Lock PIN-Protected Tabs Now.
+  Opening a workbook applies its settings (the open tab too); saving Company Settings applies them to the other tabs.
+  Wrong-PIN count and the 30-second lockout are shared by every lock screen.

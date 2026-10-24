@@ -115,8 +115,8 @@ can find it can open it in GridCraft/Excel and read pay rates.
 - [x] Split `timecard/app.py` (4,444 lines) into `timecard/ui/`: `common.py`, `pin.py`, `dialogs.py`,
       `update_dialogs.py`, `timecard_tab.py`, `employees_tab.py`, `yearlog_tab.py`, `payroll_tab.py`, `company_tab.py`,
       `app.py`; `timecard/app.py` is a shim. Code moved verbatim (checked line by line), tests and smoke test unchanged.
-- [ ] **Lock any tab with the PIN** (requested 2026-10-24): Company Settings → a "Locked by PIN" box per tab, one shared
-      lock in `ui/pin.py` that every tab uses. Company Settings itself always stays locked (it holds the switches).
+- [x] **Lock any tab with the PIN** (requested 2026-10-24): Company Settings → Locked by PIN, a box per tab, one shared
+      lock (`PinLockable` in `ui/pin.py`) every tab uses, one PIN (the one from Setup). Company Settings always locked.
 - [x] Workbook **schema version** (`schema_version` and `app_version` rows on the Company sheet). A newer app's
       workbook opens with a warning and is never saved over (no autosave, Save refuses, Save As a copy works).
       Older workbooks upgrade on save: the writers always write every current column, so no separate migration

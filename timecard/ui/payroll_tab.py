@@ -14,12 +14,17 @@ from .common import (
     FlowFrame, THREE_UP_LAYOUTS, _has_pay_hours, fmt_hours, fmt_money, fmt_period, is_salaried, open_file, parse_date,
     parse_money, period_index_for, style_tree,
 )
+from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
 
 
-class PayrollTab(ttk.Frame):
+class PayrollTab(PinLockable, ttk.Frame):
+    pin_key = "payroll"
+    pin_what = "Pay and check records"
+    pin_purpose = "calculate, print or void checks"
+
     """Pay & Checks: contractors are paid hours x rate (or a flat amount) minus an Adjustment. No taxes."""
 
     def __init__(self, master, app: "App"):
