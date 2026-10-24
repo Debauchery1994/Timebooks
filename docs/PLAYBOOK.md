@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro from a timecard and payroll-check app 
 desktop app. Each phase ships as its own release. Check items off as they land, and add new ideas to the
 **Parking lot** at the bottom rather than letting them grow the current phase.
 
-_Last updated: 2026-10-24 · current version: 1.2.0 (built, not yet released; 1.1.2 built, not yet released)_
+_Last updated: 2026-10-24 · current version: 1.2.0 (pushed, release not yet published; 1.1.2 skipped)_
 
 ---
 
@@ -25,7 +25,7 @@ Committed for 1.1.2, not pushed yet:
 - Fixes from the pre-release review (PIN replacement, autosave over outside edits, pay schedule changes)
 
 Carried over and still open:
-- [ ] Push 1.1.2 and publish the release (then test Check for Updates from 1.1.1 → 1.1.2: the first real update)
+- [x] 1.1.2 skipped (decided 2026-10-24): its changes ship in 1.2.0; the first real update is 1.1.1 → 1.2.0
 - [ ] Printer test on the real QuickBooks voucher checks (Pay & Checks → Alignment Test on plain paper first)
 
 ## 2. Where we're going
