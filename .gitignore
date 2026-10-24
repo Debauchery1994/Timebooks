@@ -7,3 +7,5 @@ dist/
 # client workbooks hold pay rates — keep them out of git
 *.xlsx
 ~$*.xlsx
+# Claude Code agent worktrees (separate checkouts)
+.claude/worktrees/
