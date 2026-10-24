@@ -261,3 +261,13 @@ stored (collect W-9s).
 - **Company Settings is behind the PIN** like Employees (bank routing/account numbers live there): same LockOverlay,
   the settings form is removed from the layout while locked, it relocks when the tab is left, on the 5-minute idle
   lock and from File → Lock Employees and Company Settings.
+
+## Year Log
+- One row per **pay period × employee** (`calc.period_log` / `PeriodLog`): Pay period | Employee | Hours worked |
+  Lunch (min, total deducted) | Notes, where Notes joins every day's note in the period as `Tue 10/20: …; Thu 10/22: …`.
+  Expanding a row shows its days with the In/Out punches. Double-click opens the day (or the period's first day) on the
+  Time Card.
+- Filters: employee (current team members; former ones show under All) and month. With a month selected, a pay period
+  that crosses the month edge only counts that month's days and is labelled "(partial)", so totals match the monthly
+  summary. Column headings sort (click again to reverse).
+- Export CSV: PeriodStart, PeriodEnd, Employee, HoursWorked, LunchDeductMin, Notes, EmployeeID, plus a total row.

@@ -1914,10 +1914,18 @@ class EmployeesTab(ttk.Frame):
 # --------------------------------------------------------------------------- Year Log tab
 
 class YearLogTab(ttk.Frame):
+    """One row per pay period and employee: hours worked, lunch deducted and that period's notes. Expand a row
+    for its days. Filter by employee and month; click a column heading to sort."""
+
+    # (column, heading, width, anchor)
+    COLS = (("period", "Pay period", 240, "w"), ("emp", "Employee", 180, "w"), ("hours", "Hours worked", 100, "e"),
+            ("lunch", "Lunch (min)", 90, "center"), ("notes", "Notes", 360, "w"))
+
     def __init__(self, master, app: "App"):
         super().__init__(master, padding=12)
         self.app = app
         self.emp_ids: list[str | None] = [None]
+        self.sort_col, self.sort_desc = "period", False
 
         top = ttk.Frame(self)
         top.pack(fill="x")
@@ -1930,20 +1938,17 @@ class YearLogTab(ttk.Frame):
         self.cb_month.current(0)
         self.cb_month.pack(side="left", padx=6)
         self.cb_month.bind("<<ComboboxSelected>>", lambda e: self.reload())
-        ttk.Button(top, text="Export CSV\u2026", command=self.export_csv).pack(side="right")
+        ttk.Button(top, text="Export CSV…", command=self.export_csv).pack(side="right")
         ttk.Button(top, text="Refresh", command=self.reload).pack(side="right", padx=6)
 
         pw = ttk.PanedWindow(self, orient="vertical")
         pw.pack(fill="both", expand=True, pady=(10, 0))
 
         f1 = ttk.Frame(pw)
-        cols = ("date", "emp", "in1", "out1", "in2", "out2", "lunch", "hours", "notes")
-        self.tree = ttk.Treeview(f1, columns=cols, show="headings")
-        spec = (("date", "Date", 110, "w"), ("emp", "Employee", 180, "w"), ("in1", "In", 80, "center"),
-                ("out1", "Out", 80, "center"), ("in2", "In", 80, "center"), ("out2", "Out", 80, "center"),
-                ("lunch", "Lunch (min)", 85, "center"), ("hours", "Hours", 70, "e"), ("notes", "Notes", 200, "w"))
-        for c, h, w, a in spec:
-            self.tree.heading(c, text=h)
+        self.tree = ttk.Treeview(f1, columns=[c[0] for c in self.COLS], show="tree headings")
+        self.tree.column("#0", width=28, minwidth=28, stretch=False)   # expand arrow for the days
+        for c, h, w, a in self.COLS:
+            self.tree.heading(c, text=h, command=lambda c=c: self.sort_by(c))
             self.tree.column(c, width=w, anchor=a, stretch=(c in ("notes", "emp")))
         style_tree(self.tree)
         vsb = ttk.Scrollbar(f1, orient="vertical", command=self.tree.yview)
@@ -1970,8 +1975,8 @@ class YearLogTab(ttk.Frame):
         style_tree(self.mtree)
         self.mtree.pack(fill="both", expand=True)
         pw.add(f2, weight=1)
-        ttk.Label(self, text="Double-click a day to open it on the Time Card tab.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self, text="Click a column heading to sort. Click + on a row to see its days; double-click "
+                  "a day or row to open it on the Time Card tab.", style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
 
     @property
     def book(self):
@@ -2007,34 +2012,73 @@ class YearLogTab(ttk.Frame):
             return eid
         return e.display_name + ("" if e.active else " (former)")
 
+    # ----- pay period rows
+    def groups(self) -> list[calc.PeriodLog]:
+        """Pay period x employee groups for the current filters, in the current sort order."""
+        start, end = self._range()
+        groups = calc.period_log(self.book.entries_for(self.selected_eid(), start, end), self.book.company)
+        keys = {
+            "period": lambda g: (g.start, self._emp_name(g.employee_id).lower()),
+            "emp": lambda g: (self._emp_name(g.employee_id).lower(), g.start),
+            "hours": lambda g: (g.hours, g.start),
+            "lunch": lambda g: (g.lunch_minutes, g.start),
+            "notes": lambda g: (g.notes_text().lower(), g.start),
+        }
+        return sorted(groups, key=keys[self.sort_col], reverse=self.sort_desc)
+
+    def _period_label(self, g: calc.PeriodLog) -> str:
+        """The period's dates, clipped to the month filter (marked partial) so totals match the month."""
+        start, end = self._range()
+        s, e = max(g.start, start), min(g.end, end)
+        return f"{s:%a %m/%d} – {e:%a %m/%d/%Y}" + ("  (partial)" if (s, e) != (g.start, g.end) else "")
+
+    def sort_by(self, col: str) -> None:
+        self.sort_desc = not self.sort_desc if col == self.sort_col else False
+        self.sort_col = col
+        self.reload()
+
+    def _show_sort_arrow(self) -> None:
+        for c, h, _w, _a in self.COLS:
+            arrow = (" ▼" if self.sort_desc else " ▲") if c == self.sort_col else ""
+            self.tree.heading(c, text=h + arrow)
+
+    @staticmethod
+    def _punches(e: TimeEntry) -> str:
+        pairs = [(a, b) for a, b in ((e.in1, e.out1), (e.in2, e.out2)) if a or b]
+        return ", ".join(f"{calc.format_time(a) or '?'}–{calc.format_time(b) or '?'}" for a, b in pairs)
+
     def rows(self) -> list[list[str]]:
+        """Export rows: one per pay period and employee."""
         start, end = self._range()
         out = []
-        for e in self.book.entries_for(self.selected_eid(), start, end):
-            out.append([e.work_date.isoformat(), self._emp_name(e.employee_id), calc.format_time(e.in1),
-                        calc.format_time(e.out1), calc.format_time(e.in2), calc.format_time(e.out2),
-                        str(e.lunch_deduct_min or 0), fmt_hours(calc.day_hours(e)), e.notes, e.employee_id])
+        for g in self.groups():
+            out.append([max(g.start, start).isoformat(), min(g.end, end).isoformat(), self._emp_name(g.employee_id),
+                        fmt_hours(g.hours), str(g.lunch_minutes), g.notes_text(), g.employee_id])
         return out
 
     def reload(self) -> None:
         if self.book is None:
             return
         self.tree.delete(*self.tree.get_children())
-        start, end = self._range()
-        entries = self.book.entries_for(self.selected_eid(), start, end)
-        total_h = Decimal("0")
-        total_l = 0
-        for e in entries:
-            h = calc.day_hours(e)
-            total_h += h
-            total_l += e.lunch_deduct_min or 0
-            self.tree.insert("", "end", iid=f"{e.employee_id}|{e.work_date.isoformat()}",
-                             values=(f"{e.work_date:%a %Y-%m-%d}", self._emp_name(e.employee_id),
-                                     calc.format_time(e.in1), calc.format_time(e.out1), calc.format_time(e.in2),
-                                     calc.format_time(e.out2), e.lunch_deduct_min or "", fmt_hours(h), e.notes))
+        self._show_sort_arrow()
+        groups = self.groups()
+        total_h, total_l, days = Decimal("0"), 0, 0
+        for g in groups:
+            total_h += g.hours
+            total_l += g.lunch_minutes
+            days += len(g.entries)
+            emp = self.book.employees.get(g.employee_id)
+            pid = f"{g.employee_id}|{g.start.isoformat()}|period"
+            self.tree.insert("", "end", iid=pid, tags=("former",) if emp is not None and not emp.active else (),
+                             values=(self._period_label(g), self._emp_name(g.employee_id), fmt_hours(g.hours),
+                                     g.lunch_minutes or "", g.notes_text()))
+            for e in g.entries:
+                self.tree.insert(pid, "end", iid=f"{e.employee_id}|{e.work_date.isoformat()}|day",
+                                 values=(f"{e.work_date:%a %m/%d}   {self._punches(e)}", "",
+                                         fmt_hours(calc.day_hours(e)), e.lunch_deduct_min or "", e.notes))
         self.tree.insert("", "end", iid="__total__", tags=("total",),
-                         values=(f"Total ({len(entries)} days)", "", "", "", "", "", total_l or "",
-                                 fmt_hours(total_h), ""))
+                         values=(f"Total ({len(groups)} pay periods, {days} days)", "", fmt_hours(total_h),
+                                 total_l or "", ""))
         # monthly summary (whole year, respecting the employee filter)
         self.mtree.delete(*self.mtree.get_children())
         y = self.book.company.year
@@ -2073,10 +2117,14 @@ class YearLogTab(ttk.Frame):
         return out
 
     def _on_double(self, event) -> None:
+        """A day opens that day on the Time Card; a pay period row opens its first day."""
         iid = self.tree.identify_row(event.y)
-        if not iid or "|" not in iid:
+        if not iid or iid.count("|") != 2:
             return
-        eid, iso = iid.split("|", 1)
+        eid, iso, kind = iid.split("|")
+        if kind == "period":
+            start, end = self._range()
+            iso = max(date.fromisoformat(iso), start).isoformat()
         self.app.goto_timecard(eid, date.fromisoformat(iso))
 
     def export_csv(self) -> None:
@@ -2094,12 +2142,12 @@ class YearLogTab(ttk.Frame):
         rows = self.rows()
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["Date", "Employee", "In", "Out", "In", "Out", "LunchDeductMin", "Hours", "Notes",
+            w.writerow(["PeriodStart", "PeriodEnd", "Employee", "HoursWorked", "LunchDeductMin", "Notes",
                         "EmployeeID"])
             w.writerows(rows)
-            w.writerow(["Total", "", "", "", "", "", "", fmt_hours(sum(Decimal(r[7].replace(",", "")) for r in rows)),
-                        "", ""])
-        self.app.status(f"Exported {len(rows)} rows to {path}")
+            w.writerow(["Total", "", "", fmt_hours(sum(Decimal(r[3].replace(",", "")) for r in rows)),
+                        str(sum(int(r[4]) for r in rows)), "", ""])
+        self.app.status(f"Exported {len(rows)} pay period rows to {path}")
 
 
 # --------------------------------------------------------------------------- Payroll tab

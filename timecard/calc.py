@@ -7,6 +7,7 @@ from __future__ import annotations
 import calendar
 import re
 from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -146,6 +147,36 @@ def periods_in_year(company: Company) -> list[tuple[date, date]]:
         periods.append((start, end))
         start, end = period_for(end + timedelta(days=1), company)
     return periods
+
+
+@dataclass
+class PeriodLog:
+    """One employee's days in one pay period (a Year Log row)."""
+    start: date
+    end: date
+    employee_id: str
+    entries: list[TimeEntry] = field(default_factory=list)
+
+    @property
+    def hours(self) -> Decimal:
+        return sum((day_hours(e) for e in self.entries), ZERO)
+
+    @property
+    def lunch_minutes(self) -> int:
+        return sum(int(e.lunch_deduct_min or 0) for e in self.entries)
+
+    def notes_text(self) -> str:
+        """Every day's note in the period, labelled with its day: 'Mon 10/20: picked up tile; Wed 10/22: ...'."""
+        return "; ".join(f"{e.work_date:%a %m/%d}: {e.notes.strip()}" for e in self.entries if e.notes.strip())
+
+
+def period_log(entries: list[TimeEntry], company: Company) -> list[PeriodLog]:
+    """Group entries by (pay period, employee), each group's days in date order; groups in period then id order."""
+    groups: dict[tuple[date, str], PeriodLog] = {}
+    for e in sorted(entries, key=lambda e: (e.work_date, e.employee_id)):
+        start, end = period_for(e.work_date, company)
+        groups.setdefault((start, e.employee_id), PeriodLog(start, end, e.employee_id)).entries.append(e)
+    return [groups[k] for k in sorted(groups)]
 
 
 def summarize_hours(entries: list[TimeEntry], company: Company,
