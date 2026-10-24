@@ -655,7 +655,11 @@ def _fix_digit_token(token: str) -> str:
     return "".join(_DIGITISH.get(c, c) for c in token)
 
 
+_DOT_LOOKALIKE = re.compile(r"(\d)\s*[•·∙●‧]\s*(\d{2})(?!\d)")   # "1 • 27": OCR read the decimal point as a bullet
+
+
 def _digit_fixed(line: str) -> str:
+    line = _DOT_LOOKALIKE.sub(r"\1.\2", line)
     return " ".join(_fix_digit_token(t) for t in line.split())
 
 

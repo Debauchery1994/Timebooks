@@ -357,3 +357,16 @@ stored (collect W-9s).
   copy new receipt files to "<workbook> Receipts" in the backup folder (`backup.backup_receipts`).
 - The tab: Month / Category / Vendor filters, sortable columns, Add / Edit (double-click) / View Receipt / Delete,
   a total row and totals by category for what is shown. Choosing a vendor suggests the category used for them last.
+
+## Scanning receipts (1.3.0)
+- Expenses > **Scan Receipt** menu: From the scanner (Windows' own WIA scan dialog via PowerShell, `scanning.
+  acquire_from_scanner`; saves a PNG to %TEMP%\TimeBooks Scans), From a photo or PDF, Check Scanner Folder, Choose
+  Scanner Folder. The scanner folder is a per-computer setting (`scanner_folder` in settings.json, with the files
+  already brought in remembered by name/size/time in `scanner_seen`); it is checked when the Expenses tab opens.
+- Reading: `receipts_ocr.read_receipt` (Windows.Media.Ocr in process through the PyWinRT packages, PowerShell fallback;
+  PDFs page 1 via pypdfium2; see docs/ocr-findings.md), told the vendors already used. `scanning.expense_from_receipt`
+  makes a **Draft**: vendor, date, total, tax, payment method, items in the memo, and the vendor's last category.
+- Review screen (`ReceiptReviewDialog`): the receipt picture on the left, the fields on the right, "check this" next to
+  every field the reader wasn't sure of (a vendor is only sure when it is a known one). OK approves; "Keep as draft"
+  saves it for later. Scanner-folder receipts go straight in as drafts; double-clicking a draft opens the review.
+  Nothing is approved without a person. Fully offline; no online AI reading.

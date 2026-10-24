@@ -1,15 +1,17 @@
-"""Expenses tab: money the business spent, with receipts attached, filters, and totals by category."""
+"""Expenses tab: money the business spent, with receipts attached, filters, and totals by category; receipts can be
+scanned, picked up from the scanner's folder or imported, read automatically, and approved on a review screen."""
 from __future__ import annotations
 
+import tkinter as tk
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
-from .. import expenses
+from .. import expenses, receipts_ocr, scanning
 from ..models import Expense
-from .common import MONTH_NAMES, ModalDialog, fmt_money, open_file, parse_date, parse_money, style_tree
+from .common import MONTH_NAMES, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
 from .pin import PinLockable
 
 if TYPE_CHECKING:
@@ -19,10 +21,12 @@ if TYPE_CHECKING:
 class ExpenseDialog(ModalDialog):
     """Add or edit one expense. result = the Expense, plus the receipt file chosen to attach (not filed yet)."""
 
-    def __init__(self, master, book, expense: Expense):
+    status = "Approved"   # what OK saves (the review screen can keep a scanned receipt as a Draft)
+
+    def __init__(self, master, book, expense: Expense, title: str = "", receipt_source: str = ""):
         self.book, self.e = book, expense
-        self.receipt_source: str = ""
-        super().__init__(master, "Edit Expense" if expense.vendor or expense.amount else "Add Expense")
+        self.receipt_source = receipt_source
+        super().__init__(master, title or ("Edit Expense" if expense.vendor or expense.amount else "Add Expense"))
 
     def body(self, f):
         e = self.e
@@ -54,8 +58,8 @@ class ExpenseDialog(ModalDialog):
         self.w["memo"] = row(7, "Memo", ttk.Entry(f, width=36))
         self.w["memo"].insert(0, e.memo)
         rf = ttk.Frame(f)
-        self.v_receipt = ttk.Label(rf, text=Path(e.receipt_file).name if e.receipt_file else "No receipt attached",
-                                   style="Muted.TLabel")
+        shown = Path(self.receipt_source or e.receipt_file).name if (self.receipt_source or e.receipt_file) else ""
+        self.v_receipt = ttk.Label(rf, text=shown or "No receipt attached", style="Muted.TLabel")
         self.v_receipt.pack(side="left")
         ttk.Button(rf, text="Attach…", command=self._choose_receipt).pack(side="left", padx=(8, 0))
         row(8, "Receipt", rf)
@@ -97,9 +101,63 @@ class ExpenseDialog(ModalDialog):
         self.result = Expense(
             expense_id=self.e.expense_id, expense_date=d, vendor=vendor, category=category, amount=amount, tax=tax,
             payment_method=w["method"].get(), check_number=check if w["method"].get() == "Check" else None,
-            memo=w["memo"].get().strip(), receipt_file=self.e.receipt_file, status="Approved",
+            memo=w["memo"].get().strip(), receipt_file=self.e.receipt_file, status=self.status,
             vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"))
         return True
+
+
+class ReceiptReviewDialog(ExpenseDialog):
+    """The receipt on the left, what was read from it on the right; fields the reader wasn't sure of say "check this".
+    OK approves the expense; "Keep as draft" saves it to review later."""
+
+    # review field name (receipts_ocr) -> ExpenseDialog field
+    FIELD_MAP = {"vendor": "vendor", "date": "date", "total": "amount", "tax": "tax", "payment_method": "method"}
+
+    def __init__(self, master, book, expense: Expense, receipt: Path, fields: receipts_ocr.ReceiptFields | None,
+                 receipt_source: str = ""):
+        self.receipt, self.fields = receipt, fields
+        self._img = None
+        super().__init__(master, book, expense, title="Review Scanned Receipt", receipt_source=receipt_source)
+
+    def body(self, f):
+        left, right = ttk.Frame(f), ttk.Frame(f)
+        left.grid(row=0, column=0, sticky="n", padx=(0, 16))
+        right.grid(row=0, column=1, sticky="n")
+        self._show_picture(left)
+        first = super().body(right)
+        review = self.fields.needs_review() if self.fields is not None else list(self.FIELD_MAP)
+        rows = {"date": 0, "vendor": 1, "amount": 3, "tax": 4, "method": 5}
+        for name in review:
+            key = self.FIELD_MAP.get(name)
+            if key in rows:
+                ttk.Label(right, text="check this", style="Warn.TLabel").grid(row=rows[key], column=2, sticky="w",
+                                                                           padx=(6, 0))
+        if not self.w["category"].get():
+            ttk.Label(right, text="choose", style="Warn.TLabel").grid(row=2, column=2, sticky="w", padx=(6, 0))
+        warn = ("Couldn't read this receipt automatically; fill it in from the picture." if self.fields is None else
+                "Fields marked \"check this\" weren't read for sure. " + " ".join(self.fields.warnings))
+        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=10, column=0, columnspan=3,
+                                                                           sticky="w", pady=(6, 0))
+        self.v_draft = tk.BooleanVar(value=False)
+        ttk.Checkbutton(right, text="Keep as draft (review later; drafts aren't in the totals)",
+                        variable=self.v_draft).grid(row=11, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        return first
+
+    def _show_picture(self, frame) -> None:
+        try:
+            from PIL import ImageTk
+            img = receipts_ocr._load_image(self.receipt, pdf_dpi=110)   # the reader's own loader (PDF page 1 too)
+            img.thumbnail((380, 560))
+            self._img = ImageTk.PhotoImage(img)
+            tk.Label(frame, image=self._img, bd=1, relief="solid").pack()
+        except Exception as exc:  # noqa: BLE001 - the form still works without the picture
+            log.warning("Could not show receipt %s: %s", self.receipt, exc)
+            ttk.Label(frame, text="(The receipt picture can't be shown.)", style="Muted.TLabel").pack()
+        ttk.Button(frame, text="Open full size", command=lambda: open_file(self.receipt)).pack(pady=(6, 0))
+
+    def apply(self) -> bool:
+        self.status = "Draft" if self.v_draft.get() else "Approved"
+        return super().apply()
 
 
 class ExpensesTab(PinLockable, ttk.Frame):
@@ -135,7 +193,16 @@ class ExpensesTab(PinLockable, ttk.Frame):
         ttk.Button(top, text="Delete", command=self.delete).pack(side="right")
         ttk.Button(top, text="View Receipt", command=self.view_receipt).pack(side="right", padx=6)
         ttk.Button(top, text="Edit…", command=self.edit).pack(side="right")
-        ttk.Button(top, text="Add Expense…", style="Accent.TButton", command=self.add).pack(side="right", padx=6)
+        ttk.Button(top, text="Add Expense…", command=self.add).pack(side="right", padx=6)
+        scan = ttk.Menubutton(top, text="Scan Receipt ▾", style="Accent.TButton")
+        menu = tk.Menu(scan, tearoff=0)
+        menu.add_command(label="From the scanner…", command=self.scan_from_scanner)
+        menu.add_command(label="From a photo or PDF…", command=self.scan_from_file)
+        menu.add_separator()
+        menu.add_command(label="Check Scanner Folder", command=self.check_scanner_folder)
+        menu.add_command(label="Choose Scanner Folder…", command=self.choose_scanner_folder)
+        scan["menu"] = menu
+        scan.pack(side="right")
 
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, pady=(10, 0))
@@ -214,8 +281,8 @@ class ExpensesTab(PinLockable, ttk.Frame):
         sel = [i for i in self.tree.selection() if i != "__total__"]
         return next((e for e in self.book.expenses if sel and e.expense_id == sel[0]), None) if self.book else None
 
-    def _save_dialog(self, original: Expense, new: bool) -> None:
-        dlg = ExpenseDialog(self, self.book, original)
+    def _save_dialog(self, original: Expense, new: bool, dlg: ExpenseDialog | None = None) -> None:
+        dlg = dlg or ExpenseDialog(self, self.book, original)
         result = dlg.show()
         if result is None:
             return
@@ -247,7 +314,12 @@ class ExpensesTab(PinLockable, ttk.Frame):
 
     def edit(self) -> None:
         e = self._selected() if not self.locked else None
-        if e is not None:
+        if e is None:
+            return
+        receipt = expenses.receipt_path(e, self.book.path)
+        if e.status == "Draft" and receipt is not None and receipt.is_file():
+            self._review(e, receipt, new=False)
+        else:
             self._save_dialog(e, new=False)
 
     def delete(self) -> None:
@@ -262,6 +334,112 @@ class ExpensesTab(PinLockable, ttk.Frame):
         self.app.mark_dirty()
         self.reload()
         self.app.status(f"Deleted {e.vendor} {fmt_money(e.amount)}.{self.app.save_hint()}")
+
+    # ----- scanning
+    def _read(self, path: Path) -> receipts_ocr.ReceiptFields | None:
+        """Read a receipt (None when it can't be read: the review screen then asks for everything)."""
+        self.app.config(cursor="watch")
+        self.app.update_idletasks()
+        try:
+            return receipts_ocr.read_receipt(path, known_vendors=expenses.vendors(self.book.expenses))
+        except receipts_ocr.ReceiptReadError as exc:
+            log.warning("Could not read receipt %s: %s", path, exc)
+            return None
+        finally:
+            self.app.config(cursor="")
+
+    def _review(self, e: Expense, receipt: Path, new: bool, source: str = "",
+                fields: receipts_ocr.ReceiptFields | None = None) -> None:
+        fields = fields if fields is not None else self._read(receipt)
+        dlg = ReceiptReviewDialog(self, self.book, e, receipt, fields, receipt_source=source)
+        self._save_dialog(e, new=new, dlg=dlg)
+
+    def _new_from_receipt(self, path: Path) -> tuple[Expense, receipts_ocr.ReceiptFields | None]:
+        """A Draft expense filled in from the receipt, and what was read (None if it couldn't be read)."""
+        fields = self._read(path)
+        new_id = expenses.next_expense_id(self.book.expenses)
+        if fields is None:
+            return Expense(new_id, date.today(), status="Draft"), None
+        return scanning.expense_from_receipt(fields, new_id, self.book.expenses), fields
+
+    def _scan_ready(self) -> bool:
+        return self.book is not None and not self.locked
+
+    def scan_from_file(self) -> None:
+        if not self._scan_ready():
+            return
+        types = " ".join(f"*{s}" for s in expenses.RECEIPT_TYPES)
+        path = filedialog.askopenfilename(parent=self, title="Choose a receipt photo, scan or PDF",
+                                          filetypes=[("Pictures and PDFs", types), ("All files", "*.*")])
+        if path:
+            e, fields = self._new_from_receipt(Path(path))
+            self._review(e, Path(path), new=True, source=path, fields=fields)
+
+    def scan_from_scanner(self) -> None:
+        if not self._scan_ready():
+            return
+        self.app.status("Scanning… use the scanner window that opens.")
+        try:
+            path = scanning.acquire_from_scanner(scanning.scans_folder())
+        except scanning.ScanError as exc:
+            messagebox.showwarning("Scan Receipt", str(exc), parent=self)
+            return
+        if path is None:
+            self.app.status("Scan cancelled.")
+            return
+        e, fields = self._new_from_receipt(path)
+        self._review(e, path, new=True, source=str(path), fields=fields)
+
+    def choose_scanner_folder(self) -> bool:
+        d = filedialog.askdirectory(parent=self, title="Folder your scanner saves receipts into",
+                                    initialdir=self.app.settings.data.get("scanner_folder") or None)
+        if not d:
+            return False
+        self.app.settings.data["scanner_folder"] = d
+        self.app.settings.save()
+        self.app.status("Scanner folder set. New receipts saved there are added as drafts when you check it "
+                        "or open this tab.")
+        return True
+
+    def check_scanner_folder(self, quiet: bool = False) -> None:
+        """Bring in new files from the scanner folder as Draft expenses (each filed with its receipt)."""
+        if not self._scan_ready():
+            return
+        folder = self.app.settings.data.get("scanner_folder") or ""
+        if not folder:
+            if not quiet and self.choose_scanner_folder():
+                self.check_scanner_folder()
+            return
+        if self.book.path is None:
+            if quiet or not self.app.save_as():
+                return
+        seen = set(self.app.settings.data.get("scanner_seen") or [])
+        found = scanning.new_scans(folder, seen)
+        added = 0
+        for path in found:
+            e, _fields = self._new_from_receipt(path)
+            try:
+                e.receipt_file = expenses.file_receipt(path, e, self.book.path)
+            except (OSError, ValueError) as exc:
+                log.warning("Scanner folder file %s skipped: %s", path, exc)
+                continue
+            self.book.expenses.append(e)
+            seen.add(scanning.scan_key(path))
+            added += 1
+        self.app.settings.data["scanner_seen"] = sorted(seen)[-2000:]
+        self.app.settings.save()
+        if added:
+            self.app.mark_dirty()
+            self.refresh()
+            self.app.status(f"{added} receipt{'s' if added != 1 else ''} from the scanner folder added as drafts. "
+                            f"Double-click a draft to review and approve it.{self.app.save_hint()}")
+        elif not quiet:
+            self.app.status("No new receipts in the scanner folder.")
+
+    def on_shown(self) -> None:
+        """Tab opened: pick up anything new in the scanner folder."""
+        if self._scan_ready() and self.app.settings.data.get("scanner_folder"):
+            self.check_scanner_folder(quiet=True)
 
     def view_receipt(self) -> None:
         e = self._selected() if not self.locked else None

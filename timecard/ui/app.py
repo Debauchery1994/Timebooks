@@ -506,6 +506,8 @@ class App(tk.Tk):
             self.yearlog_tab.reload()
         elif current is self.payroll_tab:
             self.payroll_tab.on_shown()
+        elif current is self.expenses_tab:
+            self.expenses_tab.on_shown()
         elif current is self.timecard_tab:
             self.timecard_tab.update_totals()
 

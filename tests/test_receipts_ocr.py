@@ -148,6 +148,12 @@ class MoneyTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(parse_money(text), expected)
 
+    def test_decimal_point_read_as_a_bullet(self) -> None:
+        f = extract_fields(["HOME DEPOT", "SUBTOTAL 19.48", "TAX 1 • 27", "TOTAL 20.75"])
+        self.assertEqual(f.tax.value, Decimal("1.27"))
+        self.assertEqual(f.total.value, Decimal("20.75"))
+        self.assertEqual(f.warnings, [])   # subtotal + tax now matches the total
+
     def test_not_money(self) -> None:
         for text in ("10.523 G @ $3.459/G", "TAX 8.25%", "10/24/26", "12:30", "VISA ****0042", "NO PRICE",
                      "PHONE 555 0143", "QTY 3"):

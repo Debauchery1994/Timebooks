@@ -133,12 +133,16 @@ that's wrong, then Approve.
    chosen folder and offers each new file as a Draft expense. This is the most reliable path across brands.
 3. **Import a file:** a phone photo, an emailed PDF receipt, or drag and drop.
 
+- [x] Scan Receipt menu: scanner (WIA dialog), photo/PDF, scanner folder (checked when the tab opens); review
+      screen with the picture and "check this" marks; drafts for later. _Not yet tried with a real scanner._
+- [ ] Owner: try it with the business's scanner (decision 3) and the 20-real-receipt test below
+
 **Reading the receipt (offline first):**
 - [x] **Prototype built** (2026-10-24, branch `worktree-agent-afa97093d5a3d2d78`, commit `c4ff4d2`, not merged yet):
       `timecard/receipts_ocr.py` + 41 tests + `docs/ocr-findings.md`. On 135 generated receipts: total 99%, date 96%,
       total and date both 95%, vendor spelling 91%; never "high confidence" when wrong; about 0.05 s per receipt.
-      Merge it at the start of part C (it is new files only).
-- [ ] **Windows OCR** (`Windows.Media.Ocr`): built into Windows 10/11, free, offline. _Decided:_ read it in-process
+      Merged into main 2026-10-24.
+- [x] **Windows OCR** (`Windows.Media.Ocr`): built into Windows 10/11, free, offline. _Decided:_ read it in-process
       with the PyWinRT packages (add the pins below to `requirements.txt`), with Windows PowerShell 5.1 as the automatic
       fallback when they're missing. _Checked on this PC: available, English (en-US)._
       ```
@@ -151,16 +155,16 @@ that's wrong, then Approve.
       winrt-Windows.Storage.Streams==4!10.0.28000.2705
       pypdfium2==5.14.0
       ```
-- [ ] **PDF receipts:** _Decided: yes._ First page rendered at 300 dpi with `pypdfium2` (about 7 MB in the installer).
+- [x] **PDF receipts:** _Decided: yes._ First page rendered at 300 dpi with `pypdfium2` (about 7 MB in the installer).
       Later: PDFs that already contain text (emailed receipts) can skip OCR and read the text directly.
-- [ ] Field extraction rules: total = the largest amount next to TOTAL / AMOUNT DUE / BALANCE; date = first date
+- [x] Field extraction rules (prototype; plus a decimal point read as a bullet, "1 • 27"): total = the largest amount next to TOTAL / AMOUNT DUE / BALANCE; date = first date
       pattern; tax = TAX line; vendor = top lines matched against the vendor names already used (the Vendors list
       once 1.4.0 adds it; learns from corrections); items = lines with a price.
-- [ ] Remember corrections: the next receipt from the same vendor suggests the same category.
-- [ ] Confidence: fields the app isn't sure of are highlighted for review; nothing is approved without a person.
+- [x] Remember corrections: the next receipt from the same vendor suggests the same category.
+- [x] Confidence: fields the app isn't sure of are highlighted for review; nothing is approved without a person.
       _Decided:_ a vendor is only "sure" when it matches a known vendor, so the first receipt from every new vendor
       is highlighted until that vendor is saved.
-- [ ] **No online AI receipt reading for now.** _Decided:_ ship offline only. Revisit only if the 20-real-receipt test
+- [x] **No online AI receipt reading for now.** _Decided:_ ship offline only. Revisit only if the 20-real-receipt test
       fails mainly on faded thermal paper or phone photos; if it's ever added it needs the owner's own API key, a clear
       one-time warning and a per-receipt indicator.
 
