@@ -21,6 +21,8 @@ Committed for 1.1.2, not pushed yet:
 - Company Settings → Pay timing (hold one pay period back)
 - Company Settings behind the PIN
 - Year Log by pay period × employee, with that period's notes
+- Salary hours and time off (PTO / Holiday / Sick) on the Time Card for salaried people
+- Fixes from the pre-release review (PIN replacement, autosave over outside edits, pay schedule changes)
 
 Carried over and still open:
 - [ ] Push 1.1.2 and publish the release (then test Check for Updates from 1.1.1 → 1.1.2: the first real update)
@@ -140,16 +142,35 @@ that's wrong, then Approve.
 3. **Import a file:** a phone photo, an emailed PDF receipt, or drag and drop.
 
 **Reading the receipt (offline first):**
-- [ ] **Windows OCR** (`Windows.Media.Ocr`): built into Windows 10/11, free, offline, no install.
-      _Checked on this PC: available, English (en-US)._
+- [x] **Prototype built** (2026-10-24, branch `worktree-agent-afa97093d5a3d2d78`, commit `c4ff4d2`, not merged yet):
+      `timecard/receipts_ocr.py` + 41 tests + `docs/ocr-findings.md`. On 135 generated receipts: total 99%, date 96%,
+      total and date both 95%, vendor spelling 91%; never "high confidence" when wrong; about 0.05 s per receipt.
+      Merge it at the start of Phase 3 (it is new files only).
+- [ ] **Windows OCR** (`Windows.Media.Ocr`): built into Windows 10/11, free, offline. _Decided:_ read it in-process
+      with the PyWinRT packages (add the pins below to `requirements.txt`), with Windows PowerShell 5.1 as the automatic
+      fallback when they're missing. _Checked on this PC: available, English (en-US)._
+      ```
+      winrt-runtime==4.0.0
+      winrt-Windows.Foundation==4!10.0.28000.2705
+      winrt-Windows.Foundation.Collections==4!10.0.28000.2705
+      winrt-Windows.Globalization==4!10.0.28000.2705
+      winrt-Windows.Graphics.Imaging==4!10.0.28000.2705
+      winrt-Windows.Media.Ocr==4!10.0.28000.2705
+      winrt-Windows.Storage.Streams==4!10.0.28000.2705
+      pypdfium2==5.14.0
+      ```
+- [ ] **PDF receipts:** _Decided: yes._ First page rendered at 300 dpi with `pypdfium2` (about 7 MB in the installer).
+      Later: PDFs that already contain text (emailed receipts) can skip OCR and read the text directly.
 - [ ] Field extraction rules: total = the largest amount next to TOTAL / AMOUNT DUE / BALANCE; date = first date
       pattern; tax = TAX line; vendor = top lines matched against the Vendors list (learns from corrections); items =
       lines with a price.
 - [ ] Remember corrections: the next receipt from the same vendor suggests the same category.
 - [ ] Confidence: fields the app isn't sure of are highlighted for review; nothing is approved without a person.
-- [ ] Optional, off by default: **AI receipt reading** for faded or messy receipts. It sends the image to an online
-      service, so it needs the owner's own API key, a clear one-time warning, and a per-receipt indicator. Decide
-      in Phase 3 whether it's worth it after seeing how well offline OCR does on real receipts.
+      _Decided:_ a vendor is only "sure" when it matches the Vendors list, so the first receipt from every new vendor
+      is highlighted until that vendor is saved.
+- [ ] **No online AI receipt reading for now.** _Decided:_ ship offline only. Revisit only if the 20-real-receipt test
+      fails mainly on faded thermal paper or phone photos; if it's ever added it needs the owner's own API key, a clear
+      one-time warning and a per-receipt indicator.
 
 **Done when** 20 real receipts from the business are scanned, at least 80% get the correct total and date without
 edits, and every one can be fixed on the review screen.
@@ -225,7 +246,10 @@ and totals, same as the other tabs.
 | 1 | Rename to Timebooks now or at 2.0? | Phase 1 or 7 | At 2.0, once expenses/sales exist |
 | 2 | Hide a turned-off feature completely, or show it greyed out? | Phase 1 | Hide completely |
 | 3 | Which scanner does the business have (brand/model, USB or network)? | Before Phase 3 | Needed to test WIA vs. folder |
-| 4 | Allow optional online AI receipt reading? | Mid Phase 3 | Decide after testing offline OCR on real receipts |
+| 4 | Allow optional online AI receipt reading? | Mid Phase 3 | **Decided 2026-10-24: no, offline only for now**; revisit after the 20-real-receipt test |
+| 8 | Add the Windows OCR packages (PyWinRT) to the app? | Phase 3 | **Decided 2026-10-24: yes**, with the PowerShell fallback |
+| 9 | Read PDF receipts (pypdfium2, ~7 MB)? | Phase 3 | **Decided 2026-10-24: yes** |
+| 10 | Highlight every new vendor for review? | Phase 3 | **Decided 2026-10-24: yes**, until the vendor is on the Vendors list |
 | 5 | Is the Expenses tab behind the PIN? | Phase 2 | No by default; a switch to lock it |
 | 6 | Cash-basis only (record when paid)? | Phase 2 | Yes, the same as the annual statements today |
 | 7 | One shared Checks sheet for payroll and vendors, or separate sheets? | Phase 1 schema | One shared sheet with a Type column |
