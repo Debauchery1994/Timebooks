@@ -190,6 +190,8 @@ class PayrollTab(PinLockable, ttk.Frame):
 
     def on_shown(self) -> None:
         """Tab opened: until the user picks a period, follow the default (hours may have been entered since)."""
+        if self.book is not None and self.book.company.use_vendors:
+            self.vendor_panel.refresh()      # vendors may have been added or renamed on the Vendors tab
         if self.book is not None and not self.period_chosen and not self.preview and self.periods:
             idx = self._default_period_index()
             if idx != self.cb_period.current():
