@@ -324,6 +324,11 @@ class VendorsTab(PinLockable, ttk.Frame):
         vals = self._form()
         if vals is None:
             return
+        other = vendors.find_vendor(self.book.vendors, vals["name"])
+        if other is not None and other.vendor_id != v.vendor_id:
+            messagebox.showwarning("Vendors", f"{other.name} is already on the list. Use another name, or assign "
+                                   "expenses to that vendor instead.", parent=self)
+            return
         old_name = v.name
         for k, val in vals.items():
             setattr(v, k, val)
@@ -438,6 +443,9 @@ class VendorsTab(PinLockable, ttk.Frame):
             messagebox.showwarning("Pay Bills", str(exc), parent=self)
             return
         self.app.mark_dirty()
+        if self.book.path is not None and not self.app.save():   # the check is on record before it can be printed
+            self.app.status("The check is recorded but the workbook couldn't be saved yet; save before printing.",
+                            error=True)
         self.app.expenses_tab.refresh()
         self.refresh()
         self.nb.select(2)
@@ -517,7 +525,8 @@ class VendorsTab(PinLockable, ttk.Frame):
         n = vendors.write_positive_pay(self.book, start, end, path)
         self.app.settings.data["positive_pay_last"] = end.isoformat()
         self.app.settings.save()
-        self.app.status(f"Positive-pay file with {n} check(s): {Path(path).name}. Upload it on your bank's site.")
+        self.app.status(f"Positive-pay file with {n} check(s): {Path(path).name}. Upload it on your bank's site; it "
+                        "contains the bank account number, so delete it afterwards.")
 
     def open_accounts(self) -> None:
         if self.book is not None and not self.locked:

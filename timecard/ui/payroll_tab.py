@@ -9,7 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import TYPE_CHECKING
 
 from ..models import HoursSummary, PayrollRecord
-from .. import calc, checks
+from .. import calc, checks, vendor_payments
 from .common import (
     FlowFrame, THREE_UP_LAYOUTS, _has_pay_hours, fmt_hours, fmt_money, fmt_period, is_salaried, open_file, parse_date,
     parse_money, period_index_for, style_tree,
@@ -392,11 +392,12 @@ class PayrollTab(PinLockable, ttk.Frame):
             messagebox.showinfo("Pay & Checks", "There are no checks to record.", parent=self)
             return
         start_no = simpledialog.askinteger("Starting check number", "First check number:", parent=self,
-                                           initialvalue=int(self.book.company.next_check_number), minvalue=1)
+                                           initialvalue=vendor_payments.next_check_number(self.book), minvalue=1)
         if start_no is None:
             return
         numbers = list(range(start_no, start_no + len(items)))
-        clash = sorted(set(numbers) & {r.check_number for r in self.book.payroll})
+        # one checkbook: payroll and vendor checks never share a number
+        clash = sorted(set(numbers) & vendor_payments.used_check_numbers(self.book))
         if clash:
             messagebox.showerror("Pay & Checks", f"Check number(s) already used: {', '.join(map(str, clash))}.",
                                  parent=self)

@@ -171,6 +171,7 @@ def write_positive_pay(book: "TimecardBook", start: date, end: date, path: str |
         w = csv.writer(f)
         w.writerow(POSITIVE_PAY_COLUMNS)
         for c in rows:
+            payee = ("'" + c.payee) if c.payee[:1] in "=+-@" else c.payee   # never read as a formula
             w.writerow([book.company.account_number, c.check_number, c.check_date.strftime("%m/%d/%Y"),
-                        f"{c.amount:.2f}", c.payee, "V" if c.voided else ""])
+                        f"{c.amount:.2f}", payee, "V" if c.voided else ""])
     return len(rows)

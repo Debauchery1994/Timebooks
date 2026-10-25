@@ -84,6 +84,31 @@ class VendorPaymentTests(unittest.TestCase):
             self.assertGreater(reg.stat().st_size, 1000)
 
 
+class ReviewFixTests(unittest.TestCase):
+    def test_handwrite_keeps_a_vendor_name_with_a_comma(self) -> None:
+        from timecard import checks as ck
+        b = _book(check_layout="handwrite")
+        b.vendors["V0002"] = Vendor("V0002", "Acme, Inc.")
+        p = vp.record_payment(b, b.vendors["V0002"], D("10.00"), date(2026, 10, 5))
+        seen = []
+        real = ck._payee_name
+        ck._payee_name = lambda rec, emp: (seen.append(real(rec, emp)), real(rec, emp))[1]
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                vp.render_vendor_checks([p], b, Path(d) / "hw.pdf")
+        finally:
+            ck._payee_name = real
+        self.assertEqual(seen, ["Acme, Inc."])
+
+    def test_payroll_numbers_skip_vendor_checks(self) -> None:
+        b = _book()
+        p = vp.record_payment(b, b.vendors["V0001"], D("10.00"), date(2026, 10, 5))
+        vp.void_payment(b, p)
+        b.company.next_check_number = p.check_number          # lowered by hand
+        self.assertIn(p.check_number, vp.used_check_numbers(b))
+        self.assertEqual(vp.next_check_number(b), p.check_number + 1)
+
+
 class AccountAnd1099Tests(unittest.TestCase):
     def test_account_totals_dont_count_a_check_twice(self) -> None:
         b = _book(checks_account_id="A01")

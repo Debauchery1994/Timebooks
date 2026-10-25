@@ -138,7 +138,20 @@ class _CheckStandIn:
 
 def _stand_in(book: "TimecardBook", p: VendorPayment) -> _CheckStandIn:
     return _CheckStandIn(check_number=p.check_number, check_date=p.check_date, net_pay=p.amount, gross_pay=p.amount,
-                         memo=p.memo or f"Check #{p.check_number}", employee_name=p.payee, bills=bills_for(book, p))
+                         memo=p.memo or f"Check #{p.check_number}", employee_name=p.payee,
+                         employee_id=f"vendor:{p.check_number}", bills=bills_for(book, p))
+
+
+class _VendorBook:
+    """The book as the payroll list-maker sees it, with each stand-in's payee looked up as the vendor (so a name like
+    "Acme, Inc." prints as written, not flipped like a "Last, First" person)."""
+
+    def __init__(self, book: "TimecardBook", recs: list):
+        self._book = book
+        self.employees = {rec.employee_id: vendor for rec, vendor in recs}
+
+    def __getattr__(self, name):
+        return getattr(self._book, name)
 
 
 def _payee(book: "TimecardBook", p: VendorPayment) -> Vendor:
@@ -200,7 +213,7 @@ def render_vendor_checks(payments: list[VendorPayment], book: "TimecardBook", ou
     lay = ck._layout(company)
     recs = [(_stand_in(book, p), _payee(book, p)) for p in sorted(live, key=lambda p: p.check_number)]
     if lay == "handwrite":
-        return ck._render_handwrite([r for r, _v in recs], book, out)
+        return ck._render_handwrite([r for r, _v in recs], _VendorBook(book, recs), out)
     face_logo = ck._face_logo(book)
     if lay == "voucher":
         c = ck._new_canvas(out, title="Vendor Checks")
