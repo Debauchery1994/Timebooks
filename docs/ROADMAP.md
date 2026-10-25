@@ -4,7 +4,7 @@ The working plan for turning TimeCard Pro into **TimeBooks**, a small-business b
 below is useful on its own. Check items off as they land, and add new ideas to the **Parking lot** at the bottom
 rather than letting them grow the current release.
 
-_Last updated: 2026-10-24 · published: 1.3.1 · in progress: 1.3.2 · next: 1.4.0_
+_Last updated: 2026-10-24 · published: 1.3.1 · ready to publish: 1.3.2 · next: 1.4.0_
 
 ---
 
@@ -237,17 +237,19 @@ as a draft.
 
 ## 1.3.2 — Time clock and quick wins
 
-- [ ] **Third In/Out pair** on the Time Card for extra breaks (owner: immediate need). TimeLog `In3 | Out3`, the Hours
+- [x] Also: Setup scrolls on small laptop screens (owner found it), dialogs stay on screen; pre-release review fixes (PIN-guess limits, overnight shifts, time-off days)
+
+- [x] **Third In/Out pair** on the Time Card for extra breaks (owner: immediate need). TimeLog `In3 | Out3`, the Hours
       formula, the printed time card and the Year Log; schema version 6
-- [ ] **Clock in / out from a phone**: a fixed QR code (print it, stick it on the wall) for an upload-style page served
+- [x] **Clock in / out from a phone**: a fixed QR code (print it, stick it on the wall) for an upload-style page served
       while TimeBooks is open, on the local network only. The person types the **4-digit clock PIN** set on their
       employee page (stored hashed); TimeBooks fills their next empty In/Out for today and the phone shows "clocked
       IN 8:02 AM". Wrong PINs lock that phone out for a while and too many stop the page; the owner still approves
       time cards. Company Settings: turn it on, the port, a new code if it ever leaks
-- [ ] **Duplicate check** (owner: high priority): warn when a new, scanned, phone or bank-imported expense matches one
+- [x] **Duplicate check** (owner: high priority): warn when a new, scanned, phone or bank-imported expense matches one
       already entered (same amount, close date, similar vendor)
-- [ ] **W-9 on file** checkbox and date on the employee record (no tax IDs stored)
-- [ ] **Text PDFs read directly** (emailed receipts): the PDF's own text instead of OCR, faster and exact
+- [x] **W-9 on file** checkbox and date on the employee record (no tax IDs stored)
+- [x] **Text PDFs read directly** (emailed receipts): the PDF's own text instead of OCR, faster and exact
 
 ## 1.4.0 — Vendors and accounts
 

@@ -713,6 +713,9 @@ class ModalDialog(tk.Toplevel):
         top = master.winfo_toplevel()
         x = top.winfo_rootx() + max(0, (top.winfo_width() - self.winfo_reqwidth()) // 2)
         y = top.winfo_rooty() + max(0, (top.winfo_height() - self.winfo_reqheight()) // 3)
+        # keep the whole dialog (and its OK / Cancel) on screen, e.g. on a small laptop
+        x = min(x, max(self.winfo_screenwidth() - self.winfo_reqwidth() - 10, 0))
+        y = min(y, max(self.winfo_screenheight() - self.winfo_reqheight() - 70, 0))
         self.geometry(f"+{x}+{y}")
         self.deiconify()
         self.grab_set()

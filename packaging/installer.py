@@ -345,19 +345,54 @@ def update_gui(app_exe: Path, wait_pid: int | None) -> None:
     root.mainloop()
 
 
+def scrolling_frame(root, tk, ttk, margin: int = 110):
+    """The Setup window's content frame, inside a canvas that never grows taller than the screen: on a small laptop
+    the settings scroll (scroll bar and mouse wheel) instead of running off the bottom. Returns the content frame."""
+    bg = ttk.Style(root).lookup("TFrame", "background") or root.cget("background")
+    outer = ttk.Frame(root)
+    outer.pack(fill="both", expand=True)
+    canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0, background=bg)
+    bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=bar.set)
+    bar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    frm = ttk.Frame(canvas, padding=20)
+    canvas.create_window((0, 0), window=frm, anchor="nw")
+    state = {"placed": False}
+
+    def fit(_event=None) -> None:
+        w, h = frm.winfo_reqwidth(), frm.winfo_reqheight()
+        tallest = max(root.winfo_screenheight() - margin, 300)   # leave room for the title bar and the taskbar
+        canvas.configure(scrollregion=(0, 0, w, h), width=w, height=min(h, tallest))
+        if h > tallest:
+            bar.pack(side="right", fill="y", before=canvas)
+        else:
+            bar.pack_forget()
+            canvas.yview_moveto(0)
+        if not state["placed"]:   # open near the top so the title bar and buttons are reachable
+            state["placed"] = True
+            root.geometry(f"+{max((root.winfo_screenwidth() - w) // 2, 0)}+{10}")
+
+    def wheel(event) -> None:
+        if frm.winfo_reqheight() > canvas.winfo_height():
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    frm.bind("<Configure>", fit)
+    root.bind_all("<MouseWheel>", wheel)
+    return frm
+
+
 def gui(mode: str) -> None:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
     root.title(f"{APP_NAME} Setup")
-    root.resizable(False, False)
     try:
         root.iconbitmap(str(resource("timecard.ico")))
     except tk.TclError:
         pass
-    frm = ttk.Frame(root, padding=20)
-    frm.pack(fill="both", expand=True)
+    frm = scrolling_frame(root, tk, ttk)
 
     if mode == "uninstall":
         use_settings_dir(installed_settings_dir(migrate=False))

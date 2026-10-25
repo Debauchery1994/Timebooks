@@ -188,7 +188,7 @@ class ReceiptReviewDialog(ExpenseDialog):
         try:
             from PIL import ImageTk
             img = receipts_ocr._load_image(self.receipt, pdf_dpi=110)   # the reader's own loader (PDF page 1 too)
-            img.thumbnail((380, 560))
+            img.thumbnail((380, max(240, min(560, self.winfo_screenheight() - 330))))   # fits a small laptop
             self._img = ImageTk.PhotoImage(img)
             tk.Label(frame, image=self._img, bd=1, relief="solid").pack()
         except Exception as exc:  # noqa: BLE001 - the form still works without the picture

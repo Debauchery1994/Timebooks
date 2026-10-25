@@ -413,3 +413,22 @@ stored (collect W-9s).
   stops (no guessing the code). The server header says only "TimeBooks". Plain HTTP on the local network: the window
   says to use it on business/home Wi-Fi only. Phone photos and scanner-dialog scans are deleted from
   %TEMP%\TimeBooks Scans once filed in Receipts (files in the owner's own scanner folder are never deleted).
+
+## 1.3.2: third punch pair, phone clock-in, W-9, duplicates, text PDFs, small screens
+- **Third In/Out pair**: `TimeEntry.in3 / out3` (last fields), TimeLog `In3 | Out3` appended (columns M/N, included in
+  the Hours formula), schema 6. Time Card grid, printed time card, Year Log and Copy previous day use all three.
+- **Phone clock-in** (`timecard/timeclock.py`, Company Settings > Pay > Phone clock-in; `Company.clock_enabled /
+  clock_port / clock_code`): while the workbook is open, `http://<LAN ip>:<port>/<code>/` asks for a 4-digit clock PIN
+  (`Employee.clock_pin`, PBKDF2-hashed, unique among active people; set on the Employees tab). The match's next empty
+  In/Out for today is filled (an Out after midnight closes yesterday's open shift within 16 h); a double tap within a
+  minute, an Out earlier than the last punch, a full day, or a day with time off / Closed / typed hours is refused
+  with a message for the phone. Limits: guesses counted on arrival, 5 wrong per phone → 5-minute lockout, 40 wrong or
+  30 wrong addresses → the page stops, at most 8 checks waiting, 15 s timeout, 200-byte requests; the UI thread
+  answers punches through a queue. Time Card > Clock-in QR… shows / prints the code and can make a new one. Saving
+  Company Settings keeps the running page unless its port or code changed.
+- **W-9 on file**: `Employee.w9_on_file / w9_date` (Employees sheet `W9OnFile | W9Date`); no tax IDs stored.
+- **Duplicate check**: `expenses.possible_duplicates` (same amount within 3 days, similar or missing vendor). The
+  expense form asks before saving one; drafts are marked "⚠ duplicate?" in the list and on the review screen.
+- **Text PDFs**: `receipts_ocr.read_receipt` reads a PDF's own text when it has some; scanned PDFs still use OCR.
+- **Small screens**: Setup's content scrolls inside a window no taller than the screen; dialogs are kept on screen;
+  the receipt picture on the review screen shrinks to fit.
