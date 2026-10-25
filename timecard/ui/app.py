@@ -12,7 +12,7 @@ import tkinter as tk
 import time as _time
 import traceback
 import webbrowser
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -526,16 +526,22 @@ class App(tk.Tk):
 
     # ----- phone clock-in
     def apply_clock(self) -> None:
-        """Run the phone clock-in page while a workbook that has it turned on is open (and stop it otherwise)."""
+        """Run the phone clock-in page while a workbook that has it turned on is open (and stop it otherwise). A page
+        that is already running with the same port and code keeps running, with its wrong-PIN counts."""
+        c = self.book.company if self.book is not None else None
+        wanted = c is not None and c.clock_enabled and c.use_timecards
+        if wanted and not c.clock_code:
+            c.clock_code = timeclock.new_code()
+            self.mark_dirty()
+        if (wanted and self.clock is not None and not self.clock.stopped and self.clock.code == c.clock_code
+                and (not c.clock_port or self.clock.port == int(c.clock_port))):
+            self.clock.company = c.company_name
+            return
         if self.clock is not None:
             self.clock.stop()
             self.clock = None
-        c = self.book.company if self.book is not None else None
-        if c is None or not c.clock_enabled or not c.use_timecards:
+        if not wanted:
             return
-        if not c.clock_code:
-            c.clock_code = timeclock.new_code()
-            self.mark_dirty()
         try:
             self.clock = timeclock.ClockServer(phone_upload.local_ip(), int(c.clock_port or 8770), c.clock_code,
                                                c.company_name).start()
@@ -569,7 +575,12 @@ class App(tk.Tk):
         if person is None:
             return False, "That PIN wasn't recognised."
         now = datetime.now()
-        new, what = timeclock.punch(self.book.get_entry(person.employee_id, now.date()), now)
+        yesterday = self.book.get_entry(person.employee_id, now.date() - timedelta(days=1))
+        if timeclock.open_overnight(yesterday, now) and not any(
+                getattr(self.book.get_entry(person.employee_id, now.date()), f) for f in timeclock.PUNCH_FIELDS):
+            new, what = timeclock.punch(yesterday, now, overnight=True)   # the Out of a shift past midnight
+        else:
+            new, what = timeclock.punch(self.book.get_entry(person.employee_id, now.date()), now)
         if new is None:
             return True, f"{person.full_name}: {what}"
         self.book.set_entry(new)

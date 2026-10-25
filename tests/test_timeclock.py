@@ -48,6 +48,31 @@ class PunchTests(unittest.TestCase):
         self.assertIn("Already clocked IN at 8:02 AM", why)
 
 
+class PunchRuleTests(unittest.TestCase):
+    def test_time_off_or_typed_hours_days_are_refused(self) -> None:
+        from decimal import Decimal
+        for e in (TimeEntry(DAY, "E1", hours_type="PTO"), TimeEntry(DAY, "E1", hours_type="Closed"),
+                  TimeEntry(DAY, "E1", salary_hours=Decimal("8"))):
+            new, why = timeclock.punch(e, datetime(2026, 10, 26, 8, 0))
+            self.assertIsNone(new)
+            self.assertIn("Tell the office", why)
+
+    def test_double_tap_across_a_minute_and_an_earlier_time(self) -> None:
+        e, _ = timeclock.punch(TimeEntry(DAY, "E1"), datetime(2026, 10, 26, 8, 2, 50))
+        self.assertIsNone(timeclock.punch(e, datetime(2026, 10, 26, 8, 3, 20))[0])   # 30 s later, next minute
+        self.assertIsNone(timeclock.punch(e, datetime(2026, 10, 26, 7, 0))[0])        # earlier than the last punch
+        self.assertIsNotNone(timeclock.punch(e, datetime(2026, 10, 26, 8, 10))[0])
+
+    def test_overnight_out_closes_yesterdays_shift(self) -> None:
+        y = TimeEntry(DAY, "E1", in1=t(22, 0))
+        now = datetime(2026, 10, 27, 1, 30)
+        self.assertTrue(timeclock.open_overnight(y, now))
+        new, what = timeclock.punch(y, now, overnight=True)
+        self.assertEqual((what, new.out1), ("OUT", t(1, 30)))
+        self.assertFalse(timeclock.open_overnight(TimeEntry(DAY, "E1", in1=t(8), out1=t(17)), now))
+        self.assertFalse(timeclock.open_overnight(TimeEntry(DAY, "E1", in1=t(6)), datetime(2026, 10, 27, 23, 0)))
+
+
 class ClockPageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.pin_hash = timeclock.hash_clock_pin("1234")
@@ -89,6 +114,16 @@ class ClockPageTests(unittest.TestCase):
         status, body = self._post("1234")   # locked out now, even with the right PIN
         self.assertEqual(status, 429)
         self.assertIn("Too many wrong PINs", body)
+
+    def test_a_burst_of_guesses_cant_get_past_the_limits(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+        checked = []
+        real = self.srv.serve_pending
+        self.srv.serve_pending = lambda handle: real(lambda pin: (checked.append(pin), handle(pin))[1])
+        with ThreadPoolExecutor(60) as pool:
+            codes = list(pool.map(lambda i: self._post(f"{i:04d}")[0], range(120)))
+        self.assertLessEqual(len(checked), timeclock.TRIES_PER_PHONE)   # only a handful ever reach the PIN check
+        self.assertIn(429, codes)
 
     def test_wrong_addresses_stop_the_page(self) -> None:
         for _ in range(timeclock.MAX_BAD_PATHS):

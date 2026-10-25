@@ -27,7 +27,9 @@ TRIES_PER_PHONE = 5           # wrong PINs from one phone before it waits
 LOCKOUT_SECONDS = 5 * 60
 MAX_WRONG_TOTAL = 40          # wrong PINs from anywhere before the page stops (someone is guessing)
 MAX_BAD_PATHS = 30            # wrong addresses before the page stops (someone is guessing the code)
-DOUBLE_TAP_SECONDS = 60       # a second punch this soon is a double tap, not a new punch
+DOUBLE_TAP_MINUTES = 1        # a second punch within about a minute is a double tap, not a new punch
+MAX_WAITING = 8               # PIN checks waiting for TimeBooks at once; more are told to try again
+OVERNIGHT_HOURS = 16          # an Out this long after yesterday's last In still closes yesterday's shift
 
 
 # ---- clock PINs (stored hashed on the employee's row)
@@ -58,21 +60,35 @@ def new_code() -> str:
 
 # ---- punching
 
-def punch(entry: TimeEntry, now: datetime) -> tuple[TimeEntry | None, str]:
-    """Fill the next empty In / Out of `entry` (today's) with `now` (to the minute). Returns the new entry and what
-    happened ("IN" / "OUT"), or (None, reason) when nothing was recorded."""
+def punch(entry: TimeEntry, now: datetime, overnight: bool = False) -> tuple[TimeEntry | None, str]:
+    """Fill the next empty In / Out of `entry` with `now` (to the minute). Returns the new entry and what happened
+    ("IN" / "OUT"), or (None, reason) when nothing was recorded. `overnight`: `entry` is yesterday's and this Out
+    closes a shift that ran past midnight (so it may be earlier than the In)."""
+    if (entry.hours_type or "Worked").strip().lower() not in ("", "worked") or entry.salary_hours is not None:
+        return None, "Today is entered by the office (time off or typed hours). Tell the office."
     t = time(now.hour, now.minute)
     filled = [f for f in PUNCH_FIELDS if getattr(entry, f) is not None]
-    if filled:
+    if filled and not overnight:
         last = getattr(entry, filled[-1])
         gap = (now.hour * 60 + now.minute) - (last.hour * 60 + last.minute)
-        if 0 <= gap * 60 < DOUBLE_TAP_SECONDS:
+        if 0 <= gap <= DOUBLE_TAP_MINUTES:
             kind = "IN" if filled[-1].startswith("in") else "OUT"
             return None, f"Already clocked {kind} at {_fmt(last)}."
+        if gap < 0:
+            return None, f"The last punch today is {_fmt(last)}, later than now. Tell the office."
     free = next((f for f in PUNCH_FIELDS if getattr(entry, f) is None), None)
     if free is None:
         return None, "All three In/Out pairs for today are used. Tell the office."
     return replace(entry, **{free: t}), "IN" if free.startswith("in") else "OUT"
+
+
+def open_overnight(yesterday: TimeEntry, now: datetime) -> bool:
+    """True when yesterday's card ends with an In (no Out yet) recent enough that `now` is the end of that shift."""
+    filled = [f for f in PUNCH_FIELDS if getattr(yesterday, f) is not None]
+    if not filled or not filled[-1].startswith("in"):
+        return False
+    last_in = datetime.combine(yesterday.work_date, getattr(yesterday, filled[-1]))
+    return 0 < (now - last_in).total_seconds() <= OVERNIGHT_HOURS * 3600
 
 
 def _fmt(t: time) -> str:
@@ -99,6 +115,7 @@ class ClockServer:
     def __init__(self, host: str, port: int, code: str, company: str):
         self.code, self.company = code, company
         self.requests: queue.Queue = queue.Queue()
+        self._waiting: dict[str, int] = {}   # PIN checks in progress per phone (counted before they're checked)
         self.stopped = False
         self.stopped_reason = ""
         self._fails: dict[str, list[float]] = {}
@@ -109,6 +126,8 @@ class ClockServer:
 
         class Handler(BaseHTTPRequestHandler):
             timeout = 15
+            # Note: guesses are counted when they arrive (not when answered), so sending many at once can't get
+            # past the per-phone or overall limits.
             server_version = "TimeBooks"
             sys_version = ""
 
@@ -147,11 +166,10 @@ class ClockServer:
                     self._refuse()
                     return
                 phone = self.client_address[0]
-                wait = server._locked_for(phone)
-                if wait:
-                    self._page(f"Too many wrong PINs. Try again in {wait // 60 + 1} minute(s).", 429)
-                    return
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    length = 0
                 if not 0 < length <= 200:
                     self._page("Type your 4-digit PIN.", 400)
                     return
@@ -159,20 +177,27 @@ class ClockServer:
                 if validate_clock_pin(pin):
                     self._page("Type your 4-digit PIN.", 400)
                     return
+                refusal = server._admit(phone)
+                if refusal:
+                    self._page(refusal, 429)
+                    return
                 answer: dict = {}
                 done = threading.Event()
-                server.requests.put((pin, answer, done))
-                if not done.wait(10):
+                try:
+                    server.requests.put((pin, answer, done))
+                    done.wait(10)
+                finally:
+                    server._settle(phone, wrong=bool(answer) and not answer.get("ok"))
+                if not answer:
                     self._page("TimeBooks didn't answer. Try again.", 503)
-                    return
-                if answer.get("ok"):
-                    server._fails.pop(phone, None)
+                elif answer.get("ok"):
                     self._page(answer["message"])
                 else:
-                    server._wrong(phone)
                     self._page(answer.get("message") or "That PIN wasn't recognised.", 403)
 
+        ThreadingHTTPServer.daemon_threads = True
         self.httpd = ThreadingHTTPServer((host, port), Handler)
+        self.httpd.block_on_close = False   # closing TimeBooks never waits on a phone mid-request
         self.host, self.port = host, self.httpd.server_address[1]
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
@@ -195,17 +220,31 @@ class ClockServer:
         self.stopped_reason = reason
         threading.Thread(target=self.stop, daemon=True).start()
 
-    def _locked_for(self, phone: str) -> int:
-        """Seconds this phone must still wait after too many wrong PINs (0 = may try)."""
-        now = _time.monotonic()
-        recent = [t for t in self._fails.get(phone, []) if now - t < LOCKOUT_SECONDS]
-        self._fails[phone] = recent
-        return int(LOCKOUT_SECONDS - (now - recent[0])) if len(recent) >= TRIES_PER_PHONE else 0
-
-    def _wrong(self, phone: str) -> None:
+    def _admit(self, phone: str) -> str:
+        """Let a PIN check in, counting it now (before it's answered), or say why not. Guesses in progress count
+        against the phone's and the overall limits, so a burst of guesses can't slip past them."""
         with self._lock:
-            self._fails.setdefault(phone, []).append(_time.monotonic())
-            self._wrong_total += 1
+            now = _time.monotonic()
+            recent = [t for t in self._fails.get(phone, []) if now - t < LOCKOUT_SECONDS]
+            self._fails[phone] = recent
+            in_flight = self._waiting.get(phone, 0)
+            if len(recent) + in_flight >= TRIES_PER_PHONE:
+                wait = int(LOCKOUT_SECONDS - (now - recent[0])) if recent else 60
+                return f"Too many wrong PINs. Try again in {wait // 60 + 1} minute(s)."
+            if self._wrong_total + sum(self._waiting.values()) >= MAX_WRONG_TOTAL or self.stopped:
+                return "Phone clock-in is paused. Tell the office."
+            if sum(self._waiting.values()) >= MAX_WAITING:
+                return "Busy. Wait a moment and try again."
+            self._waiting[phone] = in_flight + 1
+            return ""
+
+    def _settle(self, phone: str, wrong: bool) -> None:
+        """A PIN check finished: no longer in progress; a wrong PIN is remembered for the lockout."""
+        with self._lock:
+            self._waiting[phone] = max(self._waiting.get(phone, 1) - 1, 0)
+            if wrong:
+                self._fails.setdefault(phone, []).append(_time.monotonic())
+                self._wrong_total += 1
             stop = self._wrong_total >= MAX_WRONG_TOTAL and not self.stopped
         if stop:
             self._stop_for("Too many wrong PINs were tried, so phone clock-in was stopped. Turn it on again in "
@@ -215,6 +254,10 @@ class ClockServer:
         """Answer waiting punches (call from the UI thread): handle(pin) -> (recognised, message for the phone)."""
         while not self.requests.empty():
             pin, answer, done = self.requests.get()
+            if self.stopped:   # stopped meanwhile (e.g. too many guesses): answer without checking the PIN
+                answer["ok"], answer["message"] = True, "Phone clock-in is paused. Tell the office."
+                done.set()
+                continue
             try:
                 answer["ok"], answer["message"] = handle(pin)
             except Exception:  # noqa: BLE001 - the phone gets an answer whatever happens
