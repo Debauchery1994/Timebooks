@@ -51,6 +51,8 @@ class Company:
     use_timecards: bool = True   # Time Card and Year Log (hourly pay comes from these hours)
     use_payroll: bool = True     # Pay & Checks
     use_expenses: bool = False   # Expenses (money spent, with receipts)
+    use_vendors: bool = False    # Vendors (vendor list, unknown vendors, vendor payments by check)
+    checks_account_id: str = ""  # the account checks are written from (payroll and vendor payments)
     # Phone clock-in (Company Settings): the page's port and the secret part of its address (in the printed QR code).
     clock_enabled: bool = False
     clock_port: int = 8770
@@ -62,6 +64,7 @@ class Company:
     lock_yearlog: bool = False
     lock_payroll: bool = False
     lock_expenses: bool = False
+    lock_vendors: bool = False
     # Branding. The logo image itself is stored by storage.py on a hidden "Branding" sheet (TimecardBook.logo_png).
     brand_color: str = "#1F3A5F"
     logo_on_checks: bool = True   # voucher stubs; the check face too on blank stock only
@@ -183,6 +186,56 @@ class Expense:
     created: str = ""                  # when it was entered, ISO date-time
     recurring_id: str = ""             # made from this recurring expense (1.3.0)
     person_id: str = ""                # on whose account (e.g. an owner's gas), "" = the business
+    account_id: str = ""               # which bank account / card paid it (Accounts), "" = not said
+
+
+@dataclass
+class Vendor:
+    """Someone the business buys from or pays (1.4)."""
+    vendor_id: str
+    name: str
+    address1: str = ""
+    address2: str = ""
+    phone: str = ""
+    email: str = ""
+    default_category: str = ""
+    is_1099: bool = False      # gets a 1099-NEC (services); W-9s are kept on paper, no tax IDs here
+    w9_on_file: bool = False
+    notes: str = ""
+    active: bool = True
+
+    @property
+    def full_name(self) -> str:   # what the check printing calls the payee
+        return self.name
+
+    @property
+    def display_name(self) -> str:
+        return self.name
+
+
+@dataclass
+class Account:
+    """A bank account, card or cash drawer money is paid from (1.4)."""
+    account_id: str
+    name: str
+    kind: str = "Checking"     # Checking | Savings | Credit card | Cash | Other
+    last4: str = ""            # the last 4 digits only, to tell accounts apart (never the full number)
+    opening_balance: Decimal = Decimal("0")
+    active: bool = True
+
+
+@dataclass
+class VendorPayment:
+    """A check written to a vendor (1.4). Shares the check-number sequence with payroll checks."""
+    check_number: int
+    check_date: date
+    vendor_id: str
+    payee: str                       # the vendor's name when the check was written
+    amount: Decimal = Decimal("0")
+    memo: str = ""
+    expense_ids: str = ""            # the expenses this check paid, comma separated
+    account_id: str = ""
+    voided: bool = False
 
 
 @dataclass

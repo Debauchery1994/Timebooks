@@ -21,7 +21,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from . import __version__, branding, calc
 from . import expenses as expenses_mod
-from .models import Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip
+from .models import (
+    Account, Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip, Vendor, VendorPayment,
+)
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
 LOCKED_MSG = "The workbook is open in another program (GridCraft/Excel). Close it and try again."
@@ -49,7 +51,12 @@ PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "sta
                  "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 EXPENSE_HEADERS = ["ExpenseID", "Date", "Vendor", "VendorID", "Category", "Amount", "Tax", "PaymentMethod",
-                   "CheckNumber", "Memo", "ReceiptFile", "Status", "Created", "RecurringID", "PersonID"]
+                   "CheckNumber", "Memo", "ReceiptFile", "Status", "Created", "RecurringID", "PersonID", "AccountID"]
+VENDOR_HEADERS = ["VendorID", "Name", "Address1", "Address2", "Phone", "Email", "DefaultCategory", "Is1099",
+                  "W9OnFile", "Notes", "Active"]
+ACCOUNT_HEADERS = ["AccountID", "Name", "Type", "Last4", "OpeningBalance", "Active"]
+VENDOR_PAYMENT_HEADERS = ["CheckNumber", "CheckDate", "VendorID", "Payee", "Amount", "Memo", "ExpenseIDs",
+                          "AccountID", "Voided"]
 MILEAGE_HEADERS = ["TripID", "Date", "PersonID", "Person", "Purpose", "From", "To", "Miles", "Rate", "Amount", "Notes"]
 RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMethod", "Memo", "Every", "NextDate",
                      "Active", "Day"]
@@ -63,7 +70,8 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   4 = 1.3.0: Expenses and Categories sheets, use_expenses / lock_expenses
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 #   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair); Employees ClockPin / W9OnFile / W9Date; clock_* settings
-SCHEMA_VERSION = 6
+#   7 = 1.4: Vendors, Accounts and VendorPayments sheets; Expenses AccountID
+SCHEMA_VERSION = 7
 META_KEYS = ("schema_version", "app_version")
 
 # Hours WORKED (column I): 0 for PTO/Holiday/Sick/Closed (L); the typed salary hours (K) when set; else the three
@@ -222,6 +230,9 @@ class TimecardBook:
         self.expenses: list[Expense] = []
         self.recurring: list[Recurring] = []
         self.trips: list[Trip] = []
+        self.vendors: dict[str, Vendor] = {}
+        self.accounts: dict[str, Account] = {}
+        self.vendor_payments: list[VendorPayment] = []
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.dirty = False
@@ -325,6 +336,21 @@ class TimecardBook:
                     rec = cls._read_recurring(r)
                     if rec:
                         book.recurring.append(rec)
+            if (ws := sheet("vendors")) is not None:
+                for r in _rows(ws):
+                    v = cls._read_vendor(r)
+                    if v:
+                        book.vendors[v.vendor_id] = v
+            if (ws := sheet("accounts")) is not None:
+                for r in _rows(ws):
+                    acct = cls._read_account(r)
+                    if acct:
+                        book.accounts[acct.account_id] = acct
+            if (ws := sheet("vendorpayments")) is not None:
+                for r in _rows(ws):
+                    vp = cls._read_vendor_payment(r)
+                    if vp:
+                        book.vendor_payments.append(vp)
             if (ws := sheet("mileage")) is not None:
                 for r in _rows(ws):
                     trip = cls._read_trip(r)
@@ -434,7 +460,39 @@ class TimecardBook:
             tax=calc.money(_to_decimal(r.get("tax"))), payment_method=_text(r.get("paymentmethod")) or "Other",
             check_number=check or None, memo=_text(r.get("memo")), receipt_file=_text(r.get("receiptfile")),
             status=status if status in expenses_mod.STATUSES else "Approved", created=_text(r.get("created")),
-            recurring_id=_text(r.get("recurringid")), person_id=_text(r.get("personid")))
+            recurring_id=_text(r.get("recurringid")), person_id=_text(r.get("personid")),
+            account_id=_text(r.get("accountid")))
+
+    @staticmethod
+    def _read_vendor(r: dict[str, Any]) -> Vendor | None:
+        vid, name = _text(r.get("vendorid")), _text(r.get("name"))
+        if not vid or not name:
+            return None
+        return Vendor(vendor_id=vid, name=name, address1=_text(r.get("address1")), address2=_text(r.get("address2")),
+                      phone=_text(r.get("phone")), email=_text(r.get("email")),
+                      default_category=_text(r.get("defaultcategory")), is_1099=_to_bool(r.get("is1099")),
+                      w9_on_file=_to_bool(r.get("w9onfile")), notes=_text(r.get("notes")),
+                      active=_to_bool(r.get("active"), True))
+
+    @staticmethod
+    def _read_account(r: dict[str, Any]) -> Account | None:
+        aid, name = _text(r.get("accountid")), _text(r.get("name"))
+        if not aid or not name:
+            return None
+        return Account(account_id=aid, name=name, kind=_text(r.get("type")) or "Checking",
+                       last4=re.sub(r"\D", "", _text(r.get("last4")))[-4:],
+                       opening_balance=calc.money(_to_decimal(r.get("openingbalance"))),
+                       active=_to_bool(r.get("active"), True))
+
+    @staticmethod
+    def _read_vendor_payment(r: dict[str, Any]) -> VendorPayment | None:
+        num, d = _to_int(r.get("checknumber"), 0), _to_date(r.get("checkdate"))
+        if not num or d is None:
+            return None
+        return VendorPayment(check_number=num, check_date=d, vendor_id=_text(r.get("vendorid")),
+                             payee=_text(r.get("payee")), amount=calc.money(_to_decimal(r.get("amount"))),
+                             memo=_text(r.get("memo")), expense_ids=_text(r.get("expenseids")),
+                             account_id=_text(r.get("accountid")), voided=_to_bool(r.get("voided")))
 
     @staticmethod
     def _read_trip(r: dict[str, Any]) -> Trip | None:
@@ -557,6 +615,9 @@ class TimecardBook:
         self._write_categories(wb.create_sheet("Categories"))
         self._write_recurring(wb.create_sheet("Recurring"))
         self._write_mileage(wb.create_sheet("Mileage"))
+        self._write_vendors(wb.create_sheet("Vendors"))
+        self._write_accounts(wb.create_sheet("Accounts"))
+        self._write_vendor_payments(wb.create_sheet("VendorPayments"))
         if self.logo_png:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -621,8 +682,28 @@ class TimecardBook:
         for e in sorted(self.expenses, key=lambda e: (e.expense_date, e.expense_id)):
             ws.append([e.expense_id, e.expense_date, e.vendor, e.vendor_id, e.category, float(e.amount), float(e.tax),
                        e.payment_method, e.check_number, e.memo, e.receipt_file, e.status, e.created,
-                       e.recurring_id, e.person_id])
+                       e.recurring_id, e.person_id, e.account_id])
             _fmt_row(ws, ws.max_row, {2: FMT_DATE, 6: FMT_MONEY, 7: FMT_MONEY})
+
+    def _write_vendors(self, ws: Worksheet) -> None:
+        _write_header(ws, VENDOR_HEADERS, [10, 28, 28, 28, 14, 24, 20, 8, 9, 30, 7])
+        for v in sorted(self.vendors.values(), key=lambda v: v.vendor_id):
+            ws.append([v.vendor_id, v.name, v.address1, v.address2, v.phone, v.email, v.default_category,
+                       "Yes" if v.is_1099 else "No", "Yes" if v.w9_on_file else "No", v.notes,
+                       "Yes" if v.active else "No"])
+
+    def _write_accounts(self, ws: Worksheet) -> None:
+        _write_header(ws, ACCOUNT_HEADERS, [10, 24, 12, 8, 14, 7])
+        for a in sorted(self.accounts.values(), key=lambda a: a.account_id):
+            ws.append([a.account_id, a.name, a.kind, a.last4, float(a.opening_balance), "Yes" if a.active else "No"])
+            _fmt_row(ws, ws.max_row, {5: FMT_MONEY})
+
+    def _write_vendor_payments(self, ws: Worksheet) -> None:
+        _write_header(ws, VENDOR_PAYMENT_HEADERS, [12, 12, 10, 28, 12, 30, 24, 10, 7])
+        for p in sorted(self.vendor_payments, key=lambda p: p.check_number):
+            ws.append([p.check_number, p.check_date, p.vendor_id, p.payee, float(p.amount), p.memo, p.expense_ids,
+                       p.account_id, "Yes" if p.voided else "No"])
+            _fmt_row(ws, ws.max_row, {2: FMT_DATE, 5: FMT_MONEY})
 
     def _write_mileage(self, ws: Worksheet) -> None:
         _write_header(ws, MILEAGE_HEADERS, [10, 12, 10, 22, 30, 20, 20, 9, 8, 11, 30])
