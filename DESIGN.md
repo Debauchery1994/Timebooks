@@ -432,3 +432,28 @@ stored (collect W-9s).
 - **Text PDFs**: `receipts_ocr.read_receipt` reads a PDF's own text when it has some; scanned PDFs still use OCR.
 - **Small screens**: Setup's content scrolls inside a window no taller than the screen; dialogs are kept on screen;
   the receipt picture on the review screen shrinks to fit.
+
+## 1.4: Vendors, accounts, vendor payments
+- **Vendors tab** (Company Settings > Features > Vendors; Locked by PIN > Vendors), three sections:
+  - *Vendors*: `Vendors` sheet (`VendorID | Name | Address1 | Address2 | Phone | Email | DefaultCategory | Is1099 |
+    W9OnFile | Notes | Active`). Adding or saving a vendor links expenses typed with that name (`Expense.vendor_id`);
+    renaming one renames its expenses and moves their receipts.
+  - *Unknown vendors*: expenses with no vendor, or a name not on the list (`vendors.unknown_vendor_expenses`); assigning
+    a vendor (existing, or a new one typed) sets name, VendorID and the default category where blank, and moves each
+    receipt into `Receipts\<year>\<vendor>` (`vendors.assign_vendor` → `expenses.refile_receipt`).
+  - *Vendor Payments* (`timecard/vendor_payments.py`, a separate feature): Pay Bills writes a check to the selected
+    vendor for the ticked bills (approved expenses paid by Check with no check number; the amount must equal them) or,
+    with none ticked, for an amount (an expense is made for it, marked `*` in `ExpenseIDs`). `VendorPayments` sheet
+    (`CheckNumber | CheckDate | VendorID | Payee | Amount | Memo | ExpenseIDs | AccountID | Voided`). Check numbers
+    come from the one sequence shared with payroll (`next_check_number` skips any number already used). Void: the
+    bills are unpaid again, an expense the check made is removed, the number is never reused. Printing borrows
+    `checks.py` (check face, 3-up, binder, handwrite, offsets, logos, MICR) through a stand-in record with no hours;
+    the voucher stub is its own and lists the bills paid. Check Register: payroll + vendor checks by number.
+- **Accounts** (`Accounts` sheet: `AccountID | Name | Type | Last4 | OpeningBalance | Active`; only the last 4
+  digits). Expenses say which account paid them (`Expenses.AccountID`, "Paid from" on the form; bank imports take the
+  statement's account); `Company.checks_account_id` is the account checks are written from. The Accounts window shows
+  money out per account this year (expenses not paid by check + checks; a bill paid by check counts once).
+- **Vendor 1099 totals**: vendors marked "send a 1099", paid by check, cash or bank transfer in the year (card payments
+  are reported by the card companies); a "Vendor 1099" sheet in the annual statements workbook.
+- **Positive pay**: a CSV of the checks issued or voided in a date range (`AccountNumber | CheckNumber | IssueDate |
+  Amount | Payee | Void`); banks differ, so the exact columns may need to match the business's bank. Schema 7.

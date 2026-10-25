@@ -29,6 +29,7 @@ from .common import (
 )
 from .company_tab import CompanyTab
 from .expenses_tab import ExpensesTab
+from .vendors_tab import VendorsTab
 from .dialogs import NewYearDialog, StartPositionDialog
 from .employees_tab import EmployeesTab
 from .payroll_tab import PayrollTab
@@ -72,12 +73,14 @@ class App(tk.Tk):
         self.yearlog_tab = YearLogTab(self.nb, self)
         self.payroll_tab = PayrollTab(self.nb, self)
         self.expenses_tab = ExpensesTab(self.nb, self)
+        self.vendors_tab = VendorsTab(self.nb, self)
         self.company_tab = CompanyTab(self.nb, self)
         # The tab registry: (tab, label, the Company feature switch that shows it, or None for always shown).
         self.tab_specs = ((self.timecard_tab, "Time Card", "use_timecards"), (self.employees_tab, "Employees", None),
                           (self.yearlog_tab, "Year Log", "use_timecards"), (self.payroll_tab, "Pay & Checks",
                                                                             "use_payroll"),
-                          (self.expenses_tab, "Expenses", "use_expenses"), (self.company_tab, "Company Settings", None))
+                          (self.expenses_tab, "Expenses", "use_expenses"), (self.vendors_tab, "Vendors", "use_vendors"),
+                          (self.company_tab, "Company Settings", None))
         for tab, text, _feature in self.tab_specs:
             self.nb.add(tab, text=f"  {text}  ")
         for tab in self.lockable_tabs:
@@ -488,6 +491,7 @@ class App(tk.Tk):
         self.yearlog_tab.refresh()
         self.payroll_tab.refresh()
         self.expenses_tab.refresh()
+        self.vendors_tab.refresh()
         self.company_tab.refresh()
 
     def refresh_employees(self) -> None:
@@ -608,7 +612,7 @@ class App(tk.Tk):
     @property
     def lockable_tabs(self) -> tuple:
         return (self.timecard_tab, self.employees_tab, self.yearlog_tab, self.payroll_tab, self.expenses_tab,
-                self.company_tab)
+                self.vendors_tab, self.company_tab)
 
     @property
     def pin_tabs(self) -> list:

@@ -46,6 +46,14 @@ class BankImportDialog(ModalDialog):
                 self.pickers[field] = cb
             ttk.Checkbutton(pick, text="Money out is positive", variable=self.v_flip,
                             command=self.reload).pack(side="left", padx=(12, 0))
+        accts = sorted((a for a in self.book.accounts.values() if a.active), key=lambda a: a.name.lower())
+        self.accounts = [("", "(not said)")] + [(a.account_id, a.name) for a in accts]
+        arow = ttk.Frame(f)
+        arow.pack(fill="x", pady=(0, 6))
+        ttk.Label(arow, text="This statement is for").pack(side="left")
+        self.cb_acct = ttk.Combobox(arow, values=[n for _i, n in self.accounts], state="readonly", width=28)
+        self.cb_acct.current(1 if len(self.accounts) == 2 else 0)
+        self.cb_acct.pack(side="left", padx=6)
         cols = (("date", "Date", 90), ("desc", "Description", 320), ("amount", "Amount", 100),
                 ("match", "Match", 220), ("add", "Add", 60))
         self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=16)
@@ -135,7 +143,7 @@ class BankImportDialog(ModalDialog):
                 expense_id=expenses.next_expense_id(self.book.expenses), expense_date=ln.line_date, vendor=vendor,
                 category=expenses.last_category_for(self.book.expenses, vendor), amount=-ln.amount,
                 payment_method="Card", memo=f"From bank statement: {ln.description}"[:200], status="Draft",
-                created=now))
+                created=now, account_id=self.accounts[max(self.cb_acct.current(), 0)][0]))
             added += 1
         if added and not messagebox.askyesno("Bank Statement", f"Add {added} draft expense(s)? Review and approve "
                                              "them on the Expenses tab.", parent=self):

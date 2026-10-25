@@ -298,6 +298,19 @@ def export_statements_xlsx(book: "TimecardBook", statements: list[AnnualStatemen
         for c in row:
             c.number_format = MONEY_FMT
 
+    from . import vendors
+    rows = vendors.vendor_1099_totals(book, book.company.year) if getattr(book, "vendors", None) else []
+    if rows:
+        wv = wb.create_sheet("Vendor 1099")
+        _sheet(wv, ["VendorID", "Name", "Address1", "Address2", "PaidByCheckCashTransfer", "W9OnFile",
+                    "AtOrOver1099Threshold"], [10, 28, 28, 26, 16, 10, 12])
+        for v, amt in rows:
+            wv.append([v.vendor_id, v.name, v.address1, v.address2, float(amt), "Yes" if v.w9_on_file else "No",
+                       "Yes" if amt >= threshold else "No"])
+        for row in wv.iter_rows(min_row=2, min_col=5, max_col=5):
+            for c in row:
+                c.number_format = MONEY_FMT
+
     wb.properties.title = f"{book.company.company_name} Annual Statements {book.company.year}"
     wb.save(out)
     return out

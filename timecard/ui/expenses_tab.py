@@ -68,6 +68,14 @@ class ExpenseDialog(ModalDialog):
                                                                     state="readonly", width=24))
         self.w["account"].current(next((i for i, (pid, _n) in enumerate(self.people) if pid == (e.person_id or None)),
                                        0))
+        accts = sorted((a for a in self.book.accounts.values() if a.active or a.account_id == e.account_id),
+                       key=lambda a: a.name.lower())
+        self.accounts = [("", "(not said)")] + [(a.account_id, a.name + (f" ··{a.last4}" if a.last4 else ""))
+                                               for a in accts]
+        self.w["account_paid"] = row(11, "Paid from", ttk.Combobox(f, values=[n for _i, n in self.accounts],
+                                                                    state="readonly", width=24))
+        self.w["account_paid"].current(next((i for i, (aid, _n) in enumerate(self.accounts)
+                                             if aid == e.account_id), 0))
         self.w["repeats"] = ttk.Combobox(f, values=["No"] + list(expenses.REPEATS), state="readonly", width=12)
         linked = next((r for r in self.book.recurring if r.recurring_id == e.recurring_id), None)
         self.w["repeats"].set(linked.every if linked else "No")
@@ -81,7 +89,7 @@ class ExpenseDialog(ModalDialog):
         ttk.Button(rf, text="Attach…", command=self._choose_receipt).pack(side="left", padx=(8, 0))
         row(8, "Receipt", rf)
         ttk.Label(f, text="Amount is the total paid, tax included. Receipts are copied into a Receipts folder next to "
-                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=11, column=0, columnspan=2,
+                  "the workbook.", style="Muted.TLabel", wraplength=380).grid(row=13, column=0, columnspan=2,
                                                                              sticky="w", pady=(6, 0))
         return self.w["vendor"] if not e.vendor else self.w["amount"]
 
@@ -135,7 +143,8 @@ class ExpenseDialog(ModalDialog):
             memo=w["memo"].get().strip(), receipt_file=self.e.receipt_file, status=self.status,
             vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"),
             recurring_id=self.e.recurring_id,
-            person_id=self.people[max(w["account"].current(), 0)][0] or "")
+            person_id=self.people[max(w["account"].current(), 0)][0] or "",
+            account_id=self.accounts[max(w["account_paid"].current(), 0)][0])
         return True
 
 
@@ -169,7 +178,7 @@ class ReceiptReviewDialog(ExpenseDialog):
             ttk.Label(right, text="choose", style="Warn.TLabel").grid(row=2, column=2, sticky="w", padx=(6, 0))
         warn = ("Couldn't read this receipt automatically; fill it in from the picture." if self.fields is None else
                 "Fields marked \"check this\" weren't read for sure. " + " ".join(self.fields.warnings))
-        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=13, column=0, columnspan=3,
+        ttk.Label(right, text=warn, style="Muted.TLabel", wraplength=380).grid(row=16, column=0, columnspan=3,
                                                                            sticky="w", pady=(6, 0))
         probe = Expense(self.e.expense_id, self.e.expense_date, vendor=self.e.vendor, amount=self.e.amount)
         same = expenses.possible_duplicates(probe, self.book.expenses)
@@ -178,10 +187,10 @@ class ReceiptReviewDialog(ExpenseDialog):
             ttk.Label(right, text=f"⚠ Possible duplicate of {o.vendor or '(no vendor)'} {fmt_money(o.amount)} on "
                       f"{o.expense_date:%m/%d/%Y}" + (" (draft)" if o.status == "Draft" else "")
                       + ". If it's the same receipt, Cancel and delete this draft.", style="Warn.TLabel",
-                      wraplength=380).grid(row=15, column=0, columnspan=3, sticky="w", pady=(6, 0))
+                      wraplength=380).grid(row=18, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self.v_draft = tk.BooleanVar(value=False)
         ttk.Checkbutton(right, text="Keep as draft (review later; drafts aren't in the totals)",
-                        variable=self.v_draft).grid(row=14, column=0, columnspan=3, sticky="w", pady=(6, 0))
+                        variable=self.v_draft).grid(row=17, column=0, columnspan=3, sticky="w", pady=(6, 0))
         return first
 
     def _show_picture(self, frame) -> None:
@@ -518,7 +527,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
             ttk.Button(g, text=text, command=cmd).pack(side="left", padx=(0, 6))
         g = bar.group()
         for text, cmd in (("Bank Statement…", self.import_bank), ("Recurring…", self.manage_recurring),
-                          ("Mileage…", self.open_mileage)):
+                          ("Mileage…", self.open_mileage), ("Accounts…", self.open_accounts)):
             ttk.Button(g, text=text, command=cmd).pack(side="left", padx=(0, 6))
 
         top = ttk.Frame(self)
@@ -844,6 +853,13 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.refresh()
             self.app.status(f"{added} draft expense(s) added from the bank statement. Double-click a draft to review "
                             f"and approve it.{self.app.save_hint()}")
+
+    def open_accounts(self) -> None:
+        if self.book is None or self.locked:
+            return
+        from .vendors_tab import AccountsDialog
+        AccountsDialog(self, self.book, self.app).show()
+        self.refresh()
 
     def open_mileage(self) -> None:
         if self.book is None or self.locked:
