@@ -25,15 +25,9 @@ checks, and keeping track of what the business spends and takes in, all in one w
 | 1.2 | Time off (PTO / Holiday / Sick / Closed), lock any tab with the PIN, turn features on or off, salary per year or per pay period |
 | 1.3 | Renamed to **TimeBooks**. **Expenses** with receipts: scan from a scanner, photo, PDF, scanner folder or your phone over Wi-Fi; bank statement import and matching; recurring expenses; mileage log; owners as a pay group |
 | 1.3.2 | **Clock in / out from a phone** (QR code + personal PIN), a third In/Out pair, W-9 on file, duplicate expense check, exact reading of emailed PDF receipts, installer fits small screens |
+| 1.4 | **Vendors**: vendor list, assign unknown vendors (receipts move to the vendor's folder), vendor checks in Pay & Checks on the same checkbook as payroll, vendor 1099 totals; **Accounts**: record which bank account or card paid |
 
 ## Coming next
-
-### 1.4 — Vendors and accounts
-- Vendors list, and **Unknown vendors**: assign a vendor to expenses that don't have one; their receipts move into
-  that vendor's folder
-- **Vendor checks** written in Pay & Checks, on the same checkbook and in the same register as payroll
-- Vendor 1099 totals in the annual statements
-- **Accounts**: name your bank accounts and cards, and record which one paid for each expense or check
 
 ### 1.5 — Money foundations and safety
 - Account balances, starting from an opening balance
