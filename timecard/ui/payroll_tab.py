@@ -15,6 +15,7 @@ from .common import (
     parse_money, period_index_for, style_tree,
 )
 from .pin import PinLockable
+from .vendor_checks_panel import VendorChecksPanel
 
 if TYPE_CHECKING:
     from .app import App
@@ -36,7 +37,16 @@ class PayrollTab(PinLockable, ttk.Frame):
         self.preview_period: tuple[date, date] | None = None
         self._ot_shown: bool | None = None
 
-        top = FlowFrame(self)
+        # Two pages: Payroll (as before) and Vendor Checks (1.4; only when Vendors is turned on). Both lock with the
+        # tab's PIN lock (they're inside it).
+        self.views = ttk.Notebook(self)
+        self.views.pack(fill="both", expand=True)
+        pp = ttk.Frame(self.views, padding=4)
+        self.views.add(pp, text="  Payroll  ")
+        self.vendor_panel = VendorChecksPanel(self.views, app)
+        self.views.add(self.vendor_panel, text="  Vendor Checks  ")
+        self.views.hide(self.vendor_panel)
+        top = FlowFrame(pp)
         top.pack(fill="x")
         g1 = top.group()
         ttk.Label(g1, text="Pay period").pack(side="left")
@@ -52,7 +62,7 @@ class PayrollTab(PinLockable, ttk.Frame):
         ttk.Button(g2, text="Calculate", style="Accent.TButton", command=self.calculate).pack(side="left", padx=6)
 
         cols = ("emp", "hours", "ot", "amount", "adj", "net", "memo")
-        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=8)
+        self.tree = ttk.Treeview(pp, columns=cols, show="headings", height=8)
         for c, h, w, a in (("emp", "Name", 200, "w"), ("hours", "Hours", 80, "e"), ("ot", "OT Hrs", 70, "e"),
                            ("amount", "Amount", 100, "e"), ("adj", "Adjustment ✎", 110, "e"),
                            ("net", "Check Amount", 110, "e"), ("memo", "Memo ✎", 320, "w")):
@@ -62,10 +72,10 @@ class PayrollTab(PinLockable, ttk.Frame):
         self.tree.pack(fill="both", expand=True, pady=(10, 0))
         self.tree.bind("<Double-1>", self._on_double)
         self.v_note = tk.StringVar()
-        ttk.Label(self, textvariable=self.v_note, style="Muted.TLabel", wraplength=900,
+        ttk.Label(pp, textvariable=self.v_note, style="Muted.TLabel", wraplength=900,
                   justify="left").pack(anchor="w", pady=(4, 0))
 
-        btns = ttk.Frame(self, padding=(0, 8))
+        btns = ttk.Frame(pp, padding=(0, 8))
         btns.pack(fill="x")
         self.btn_record = ttk.Button(btns, text="Record Pay & Print Checks", style="Accent.TButton",
                                      command=self.record_and_print)
@@ -77,9 +87,9 @@ class PayrollTab(PinLockable, ttk.Frame):
         self.btn_align = ttk.Button(btns, text="Print Alignment Test", command=self.alignment_test)
         self.btn_align.pack(side="right")
 
-        ttk.Label(self, text="Checks recorded for this period", style="Section.TLabel").pack(anchor="w", pady=(6, 4))
+        ttk.Label(pp, text="Checks recorded for this period", style="Section.TLabel").pack(anchor="w", pady=(6, 4))
         rcols = ("no", "date", "emp", "hours", "amount", "net", "void")
-        self.rtree = ttk.Treeview(self, columns=rcols, show="headings", height=6)
+        self.rtree = ttk.Treeview(pp, columns=rcols, show="headings", height=6)
         for c, h, w, a in (("no", "Check #", 80, "center"), ("date", "Check Date", 100, "center"),
                            ("emp", "Name", 200, "w"), ("hours", "Hours", 80, "e"), ("amount", "Amount", 100, "e"),
                            ("net", "Check Amount", 110, "e"), ("void", "Voided", 70, "center")):
@@ -122,6 +132,11 @@ class PayrollTab(PinLockable, ttk.Frame):
     def refresh(self) -> None:
         if self.book is None:
             return
+        if self.book.company.use_vendors:
+            self.views.add(self.vendor_panel)
+            self.vendor_panel.refresh()
+        else:
+            self.views.hide(self.vendor_panel)
         self._apply_columns()
         old = self.selected_period()
         self.periods = calc.periods_in_year(self.book.company)

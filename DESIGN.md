@@ -441,7 +441,9 @@ stored (collect W-9s).
   - *Unknown vendors*: expenses with no vendor, or a name not on the list (`vendors.unknown_vendor_expenses`); assigning
     a vendor (existing, or a new one typed) sets name, VendorID and the default category where blank, and moves each
     receipt into `Receipts\<year>\<vendor>` (`vendors.assign_vendor` → `expenses.refile_receipt`).
-  - *Vendor Payments* (`timecard/vendor_payments.py`, a separate feature): Pay Bills writes a check to the selected
+  - *Vendor checks* live on the **Pay & Checks** tab ("keep money with money"): its Vendor Checks page
+    (`ui/vendor_checks_panel.py`, shown when Vendors is turned on, locked with the tab) uses
+    `timecard/vendor_payments.py`, a separate feature. Pay Bills writes a check to the chosen
     vendor for the ticked bills (approved expenses paid by Check with no check number; the amount must equal them) or,
     with none ticked, for an amount (an expense is made for it, marked `*` in `ExpenseIDs`). `VendorPayments` sheet
     (`CheckNumber | CheckDate | VendorID | Payee | Amount | Memo | ExpenseIDs | AccountID | Voided`). Check numbers
@@ -455,5 +457,8 @@ stored (collect W-9s).
   money out per account this year (expenses not paid by check + checks; a bill paid by check counts once).
 - **Vendor 1099 totals**: vendors marked "send a 1099", paid by check, cash or bank transfer in the year (card payments
   are reported by the card companies); a "Vendor 1099" sheet in the annual statements workbook.
-- **Positive pay**: a CSV of the checks issued or voided in a date range (`AccountNumber | CheckNumber | IssueDate |
-  Amount | Payee | Void`); banks differ, so the exact columns may need to match the business's bank. Schema 7.
+- **Positive pay** (parked; no button yet): `vendors.write_positive_pay` writes a CSV of the checks issued or voided in
+  a date range (`AccountNumber | CheckNumber | IssueDate | Amount | Payee | Void`); kept as the blueprint until the
+  bank and its format are known. Schema 7.
+- **History is never rewritten**: a written check keeps the payee, amount and date it was written for (renaming a
+  vendor doesn't change it); the only change is voiding it, and its number is never reused.

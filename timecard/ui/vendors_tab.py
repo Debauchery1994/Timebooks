@@ -1,19 +1,17 @@
-"""Vendors tab (1.4): the vendor list, Unknown vendors (assign a vendor; receipts move to its folder), and Vendor
-Payments (pay bills by check on the shared checkbook, the check register, positive pay). Accounts are managed here
-too (AccountsDialog, also opened from the Expenses tab)."""
+"""Vendors tab (1.4): the vendor list and Unknown vendors (assign a vendor; receipts move to its folder). Vendor checks
+are written on the Pay & Checks tab (VendorChecksPanel), which uses PayBillsDialog and AccountsDialog from here."""
 from __future__ import annotations
 
 import tkinter as tk
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
 from .. import vendor_payments as vp
 from .. import vendors
 from ..models import Account, Vendor
-from .common import ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
+from .common import ModalDialog, fmt_money, log, parse_date, parse_money, style_tree
 from .pin import PinLockable
 
 if TYPE_CHECKING:
@@ -211,7 +209,6 @@ class VendorsTab(PinLockable, ttk.Frame):
         nb.pack(fill="both", expand=True)
         self._build_list(nb)
         self._build_unknown(nb)
-        self._build_payments(nb)
         nb.bind("<<NotebookTabChanged>>", lambda e: self.refresh())
         self.nb = nb
 
@@ -262,9 +259,6 @@ class VendorsTab(PinLockable, ttk.Frame):
         ttk.Button(b, text="Save", style="Accent.TButton", command=self.save).pack(side="left")
         r += 1
         ttk.Button(form, text="No longer used / Use again", command=self.toggle_active).grid(
-            row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        r += 1
-        ttk.Button(form, text="Pay this vendor…", command=self.pay_selected).grid(
             row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
     def _on_select(self, _e=None) -> None:
@@ -403,136 +397,6 @@ class VendorsTab(PinLockable, ttk.Frame):
             log.warning("Receipts not moved: %s", problems)
         self.app.status(msg + self.app.save_hint())
 
-    # ----- vendor payments
-    def _build_payments(self, nb) -> None:
-        f = ttk.Frame(nb, padding=8)
-        nb.add(f, text="  Vendor Payments  ")
-        top = ttk.Frame(f)
-        top.pack(fill="x")
-        ttk.Button(top, text="Pay Bills…", style="Accent.TButton", command=self.pay_selected).pack(side="left")
-        for text, cmd in (("Print Checks…", self.print_checks), ("Void Check…", self.void_check),
-                          ("Check Register…", self.print_register), ("Positive Pay File…", self.positive_pay),
-                          ("Accounts…", self.open_accounts)):
-            ttk.Button(top, text=text, command=cmd).pack(side="left", padx=(6, 0))
-        cols = (("num", "Check #", 80), ("date", "Date", 90), ("payee", "Payee", 220), ("amount", "Amount", 100),
-                ("acct", "Paid from", 150), ("memo", "Memo", 240), ("void", "", 60))
-        self.ptree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", selectmode="extended")
-        for c, h, w in cols:
-            self.ptree.heading(c, text=h)
-            self.ptree.column(c, width=w, anchor="e" if c == "amount" else "w")
-        style_tree(self.ptree)
-        self.ptree.pack(fill="both", expand=True, pady=(6, 0))
-        ttk.Label(f, text="Vendor checks share the check numbers with payroll checks. Pay Bills uses the vendor "
-                  "selected on the Vendors list. Print uses the check layout in Company Settings > Checks.",
-                  style="Muted.TLabel", wraplength=760).pack(anchor="w", pady=(6, 0))
-
-    def pay_selected(self) -> None:
-        if self.book is None or self.locked:
-            return
-        v = self.book.vendors.get(self.selected or "")
-        if v is None:
-            messagebox.showinfo("Pay Bills", "Select the vendor on the Vendors list first.", parent=self)
-            self.nb.select(0)
-            return
-        r = PayBillsDialog(self, self.book, v).show()
-        if r is None:
-            return
-        try:
-            p = vp.record_payment(self.book, v, **r)
-        except ValueError as exc:
-            messagebox.showwarning("Pay Bills", str(exc), parent=self)
-            return
-        self.app.mark_dirty()
-        if self.book.path is not None and not self.app.save():   # the check is on record before it can be printed
-            self.app.status("The check is recorded but the workbook couldn't be saved yet; save before printing.",
-                            error=True)
-        self.app.expenses_tab.refresh()
-        self.refresh()
-        self.nb.select(2)
-        if self.ptree.exists(str(p.check_number)):
-            self.ptree.selection_set(str(p.check_number))
-        if messagebox.askyesno("Pay Bills", f"Check #{p.check_number} to {v.name} for {fmt_money(p.amount)} is "
-                               "recorded. Print it now?", parent=self):
-            self.print_checks()
-
-    def _selected_payments(self):
-        nums = {int(i) for i in self.ptree.selection()}
-        return [p for p in self.book.vendor_payments if p.check_number in nums]
-
-    def print_checks(self) -> None:
-        if self.book is None or self.locked:
-            return
-        chosen = [p for p in self._selected_payments() if not p.voided]
-        if not chosen:
-            messagebox.showinfo("Print Checks", "Select the checks to print on the Vendor Payments list.", parent=self)
-            return
-        out_dir = self.app.output_dir()
-        if out_dir is None:
-            return
-        sp = 1
-        if (self.book.company.check_layout or "") in ("laser_3up", "manual_3up"):
-            sp = self.app.ask_start_position(len(chosen))
-            if sp is None:
-                return
-        name = f"Vendor checks {min(p.check_number for p in chosen)}-{max(p.check_number for p in chosen)}.pdf"
-        try:
-            out = vp.render_vendor_checks(chosen, self.book, out_dir / name, start_position=sp)
-        except (OSError, ValueError) as exc:
-            messagebox.showerror("Print Checks", f"The checks couldn't be made:\n{exc}", parent=self)
-            return
-        open_file(out)
-        self.app.status(f"Vendor checks PDF: {out.name}")
-
-    def void_check(self) -> None:
-        if self.book is None or self.locked:
-            return
-        chosen = [p for p in self._selected_payments() if not p.voided]
-        if len(chosen) != 1:
-            messagebox.showinfo("Void Check", "Select one vendor check to void.", parent=self)
-            return
-        p = chosen[0]
-        if not messagebox.askyesno("Void Check", f"Void check #{p.check_number} to {p.payee} for "
-                                   f"{fmt_money(p.amount)}? The bills it paid become unpaid again; the number "
-                                   "isn't reused.", parent=self):
-            return
-        vp.void_payment(self.book, p)
-        self.app.mark_dirty()
-        self.app.expenses_tab.refresh()
-        self.refresh()
-
-    def print_register(self) -> None:
-        if self.book is None or self.locked:
-            return
-        out_dir = self.app.output_dir()
-        if out_dir is None:
-            return
-        y = self.book.company.year
-        out = vp.render_register(self.book, out_dir / f"Check register {y}.pdf", date(y, 1, 1), date(y, 12, 31))
-        open_file(out)
-
-    def positive_pay(self) -> None:
-        if self.book is None or self.locked:
-            return
-        r = DateRangeDialog(self, "Positive Pay File", self.app.settings.data.get("positive_pay_last") or "").show()
-        if r is None:
-            return
-        start, end = r
-        path = filedialog.asksaveasfilename(parent=self, title="Save the positive-pay file", defaultextension=".csv",
-                                            initialfile=f"Positive pay {start:%Y-%m-%d} to {end:%Y-%m-%d}.csv",
-                                            filetypes=[("CSV files", "*.csv")])
-        if not path:
-            return
-        n = vendors.write_positive_pay(self.book, start, end, path)
-        self.app.settings.data["positive_pay_last"] = end.isoformat()
-        self.app.settings.save()
-        self.app.status(f"Positive-pay file with {n} check(s): {Path(path).name}. Upload it on your bank's site; it "
-                        "contains the bank account number, so delete it afterwards.")
-
-    def open_accounts(self) -> None:
-        if self.book is not None and not self.locked:
-            AccountsDialog(self, self.book, self.app).show()
-            self.refresh()
-
     # ----- refresh
     def refresh(self) -> None:
         if self.book is None:
@@ -550,12 +414,6 @@ class VendorsTab(PinLockable, ttk.Frame):
             self.utree.insert("", "end", iid=e.expense_id, values=(
                 f"{e.expense_date:%m/%d/%Y}", e.vendor or "(none)", fmt_money(e.amount),
                 "Yes" if e.receipt_file else "", e.memo))
-        self.ptree.delete(*self.ptree.get_children())
-        for p in sorted(self.book.vendor_payments, key=lambda p: p.check_number, reverse=True):
-            acct = self.book.accounts.get(p.account_id)
-            self.ptree.insert("", "end", iid=str(p.check_number), tags=("former",) if p.voided else (),
-                              values=(p.check_number, f"{p.check_date:%m/%d/%Y}", p.payee, fmt_money(p.amount),
-                                      acct.name if acct else "", p.memo, "VOID" if p.voided else ""))
 
 
 class ChooseVendorDialog(ModalDialog):
@@ -586,42 +444,4 @@ class ChooseVendorDialog(ModalDialog):
             return False
         known = vendors.find_vendor(self.book.vendors, name)
         self.result = known.vendor_id if known else {"name": name, "category": self.cb_cat.get().strip()}
-        return True
-
-
-class DateRangeDialog(ModalDialog):
-    """From / to dates. result = (start, end) (built in apply)."""
-
-    def __init__(self, master, title: str, last_end: str = ""):
-        self.last_end = last_end
-        super().__init__(master, title)
-
-    def body(self, f):
-        today = date.today()
-        start = today.replace(day=1)
-        try:
-            start = date.fromisoformat(self.last_end) if self.last_end else start
-        except ValueError:
-            pass
-        self.e1, self.e2 = ttk.Entry(f, width=14), ttk.Entry(f, width=14)
-        self.e1.insert(0, start.isoformat())
-        self.e2.insert(0, today.isoformat())
-        for r, (label, e) in enumerate((("Checks from", self.e1), ("through", self.e2))):
-            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=3, padx=(0, 8))
-            e.grid(row=r, column=1, sticky="w", pady=3)
-        ttk.Label(f, text="The file lists the payroll and vendor checks (and voids) in these dates. It uses a common "
-                  "layout; if your bank asks for different columns, tell us which.", style="Muted.TLabel",
-                  wraplength=320).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        return self.e1
-
-    def apply(self) -> bool:
-        try:
-            start, end = parse_date(self.e1.get()), parse_date(self.e2.get())
-        except ValueError as exc:
-            messagebox.showwarning("Dates", str(exc), parent=self)
-            return False
-        if end < start:
-            messagebox.showwarning("Dates", "The end date is before the start date.", parent=self)
-            return False
-        self.result = (start, end)
         return True

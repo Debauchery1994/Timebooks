@@ -29,12 +29,14 @@ checks, and keeping track of what the business spends and takes in, all in one w
 ## Coming next
 
 ### 1.4 — Vendors and accounts
-- Vendors list, and **Pay Bills**: print vendor checks on the same checkbook and in the same register as payroll
-- **Unknown vendors**: assign a vendor to expenses that don't have one; their receipts move into that vendor's folder
-- Vendor 1099 totals, and a positive-pay file for the bank
-- **Accounts**: name your bank accounts and cards, record which one paid for each expense or check, see balances
+- Vendors list, and **Unknown vendors**: assign a vendor to expenses that don't have one; their receipts move into
+  that vendor's folder
+- **Vendor checks** written in Pay & Checks, on the same checkbook and in the same register as payroll
+- Vendor 1099 totals in the annual statements
+- **Accounts**: name your bank accounts and cards, and record which one paid for each expense or check
 
 ### 1.5 — Money foundations and safety
+- Account balances, starting from an opening balance
 - Owner draws, contributions and loans, kept out of profit and loss
 - Monthly reconcile against the bank statement
 - Close a month or year so finished periods can't change by accident
@@ -70,6 +72,7 @@ checks, and keeping track of what the business spends and takes in, all in one w
 
 - Reading data from shop estimating software instead of building estimates into TimeBooks
 - Direct-deposit (ACH) files for the bank
+- Positive pay: send the bank the list of checks written so it only pays those (needs the bank's own file format)
 - Importing records from other bookkeeping programs when switching mid-year
 - Other languages
 - A day that is part worked and part time off
