@@ -11,3 +11,5 @@ dist/
 .claude/worktrees/
 # installers kept for publishing (built files, not source)
 release-builds/
+# private working notes (checklists, decisions, testing) - not published
+notes/
