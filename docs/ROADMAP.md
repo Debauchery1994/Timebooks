@@ -1,6 +1,6 @@
 # TimeBooks Roadmap
 
-TimeBooks (formerly TimeCard Pro) is a Windows desktop app for small businesses: time cards, paying people, printing
+TimeBooks is a Windows desktop app for small businesses: time cards, paying people, printing
 checks, and keeping track of what the business spends and takes in, all in one workbook you own.
 
 > **A clean, simple business app for a small business owner who isn't an accountant.**
@@ -23,7 +23,7 @@ checks, and keeping track of what the business spends and takes in, all in one w
 |---|---|
 | 1.1 | Time cards, year log, payroll for contractors (hourly or salary), voucher / 3-up / handwritten checks, annual statements, backups, portable USB copy, themes, company branding, Check for Updates |
 | 1.2 | Time off (PTO / Holiday / Sick / Closed), lock any tab with the PIN, turn features on or off, salary per year or per pay period |
-| 1.3 | Renamed to **TimeBooks**. **Expenses** with receipts: scan from a scanner, photo, PDF, scanner folder or your phone over Wi-Fi; bank statement import and matching; recurring expenses; mileage log; owners as a pay group |
+| 1.3 | **Expenses** with receipts: scan from a scanner, photo, PDF, scanner folder or your phone over Wi-Fi; bank statement import and matching; recurring expenses; mileage log; owners as a pay group |
 | 1.3.2 | **Clock in / out from a phone** (QR code + personal PIN), a third In/Out pair, W-9 on file, duplicate expense check, exact reading of emailed PDF receipts, installer fits small screens |
 | 1.4 | **Vendors**: vendor list, assign unknown vendors (receipts move to the vendor's folder), vendor checks in Pay & Checks on the same checkbook as payroll, vendor 1099 totals; **Accounts**: record which bank account or card paid |
 | 1.5 | **Accounts tab**: balances from an opening balance, money in and out (deposits, owner draws and contributions, loans, transfers; owner and loan money kept out of profit and loss), monthly reconcile against the bank statement; **close a month or year**; **change history** for every money edit; split one expense across categories; **cash advances** to employees, paid back a set amount per check; **restore from backup**, encrypted backups for cloud folders, and a check between the PC and USB copies of a workbook; a faded picture on blank check stock; add a vendor while writing a vendor check |

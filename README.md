@@ -1,6 +1,6 @@
 # Timebooks
 
-**TimeBooks** (formerly TimeCard Pro): a Windows desktop app (Python + tkinter) for tracking contractor hours by year,
+**TimeBooks**: a Windows desktop app (Python + tkinter) for tracking contractor hours by year,
 running payroll and printing checks to PDF. Data lives in a GridCraft-compatible `.xlsx` workbook.
 See [DESIGN.md](DESIGN.md) for the full design contract.
 Where it's heading, release by release: [docs/ROADMAP.md](docs/ROADMAP.md).
