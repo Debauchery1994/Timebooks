@@ -26,18 +26,9 @@ checks, and keeping track of what the business spends and takes in, all in one w
 | 1.3 | Renamed to **TimeBooks**. **Expenses** with receipts: scan from a scanner, photo, PDF, scanner folder or your phone over Wi-Fi; bank statement import and matching; recurring expenses; mileage log; owners as a pay group |
 | 1.3.2 | **Clock in / out from a phone** (QR code + personal PIN), a third In/Out pair, W-9 on file, duplicate expense check, exact reading of emailed PDF receipts, installer fits small screens |
 | 1.4 | **Vendors**: vendor list, assign unknown vendors (receipts move to the vendor's folder), vendor checks in Pay & Checks on the same checkbook as payroll, vendor 1099 totals; **Accounts**: record which bank account or card paid |
+| 1.5 | **Accounts tab**: balances from an opening balance, money in and out (deposits, owner draws and contributions, loans, transfers; owner and loan money kept out of profit and loss), monthly reconcile against the bank statement; **close a month or year**; **change history** for every money edit; split one expense across categories; **cash advances** to employees, paid back a set amount per check; **restore from backup**, encrypted backups for cloud folders, and a check between the PC and USB copies of a workbook; a faded picture on blank check stock; add a vendor while writing a vendor check |
 
 ## Coming next
-
-### 1.5 — Money foundations and safety
-- Account balances, starting from an opening balance
-- Owner draws, contributions and loans, kept out of profit and loss
-- Monthly reconcile against the bank statement
-- Close a month or year so finished periods can't change by accident
-- Change history for every money edit
-- Split one expense across categories
-- **Restore from backup**, and encrypted backups for cloud folders
-- A check between the PC and USB copies of a workbook so work isn't lost between them
 
 ### 1.6 — Jobs and time off
 - **Jobs**: tag hours, parts and mileage to a job or customer; per-worker commission rates; see what each job cost
