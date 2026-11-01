@@ -323,8 +323,21 @@ class App(tk.Tk):
         self.btn_smaller.pack(side="left", padx=(0, 4))
         self.btn_larger.pack(side="left", padx=(0, 4))
         self.btn_theme.pack(side="left")
+        # today's date beside the year, then the year, then a Save button (it saves automatically too, but a
+        # button you can see is reassuring)
+        self.lbl_today = tag_role(tk.Label(hdr, text="", font=F("bold"), padx=10, pady=4), "year")
+        self.lbl_today.pack(side="right", padx=(2, 0))
         self.lbl_year = tag_role(tk.Label(hdr, text="", font=F("year"), padx=14, pady=4), "year")
         self.lbl_year.pack(side="right")
+        save_box = tag_role(tk.Frame(hdr), "header")
+        save_box.pack(side="right", padx=(0, 10))
+        self.btn_save = tag_role(tk.Button(save_box, text="Save", command=self._header_save, font=F("bold"), padx=12,
+                                           pady=2, cursor="hand2", takefocus=1), "header_btn")
+        self.btn_save.bind("<Return>", lambda e: (self._header_save(), "break")[1])
+        self.btn_save.bind("<FocusIn>", lambda e: self.status("Save the workbook now (Ctrl+S)"))
+        self.btn_save.pack()
+        self._save_flash_job: str | None = None
+        self._tick_today()
         if paths.is_portable():
             drive = os.path.splitdrive(str(paths.app_dir()))[0] or str(paths.app_dir())
             tag_role(tk.Label(hdr, text=f"PORTABLE \u2014 data on {drive}", font=F("small_bold"), padx=10, pady=4),
@@ -333,6 +346,25 @@ class App(tk.Tk):
         self.hdr_logo.pack_forget()
         left.pack(side="left", fill="x", expand=True)   # packed last so the right side never clips
         self._hdr = hdr
+
+    def _tick_today(self) -> None:
+        """Today's date in the header, checked every minute so it turns over at midnight."""
+        self.lbl_today.configure(text=f"{date.today():%a %m/%d/%Y}")
+        self.after(60_000, self._tick_today)
+
+    def _header_save(self) -> None:
+        if self.book is None:
+            self.status("Open or create a workbook first.")
+            return
+        if self.save():
+            if self._save_flash_job is not None:
+                self.after_cancel(self._save_flash_job)
+            self.btn_save.configure(text="Saved \u2713")
+            self._save_flash_job = self.after(2000, self._end_save_flash)
+
+    def _end_save_flash(self) -> None:
+        self._save_flash_job = None
+        self.update_title()
 
     def _build_welcome(self, master) -> ttk.Frame:
         f = ttk.Frame(master, padding=40)
@@ -504,6 +536,8 @@ class App(tk.Tk):
         self.lbl_path.configure(text=self.book.path.name if self.book.path else "Not saved yet")
         self.lbl_year.configure(text=str(self.book.company.year))
         self.v_dirty.set("Unsaved changes" if self.book.dirty else "All changes saved")
+        if getattr(self, "_save_flash_job", None) is None:
+            self.btn_save.configure(text="Save \u2022" if self.book.dirty else "Save")
 
     # ----- book lifecycle
     def set_book(self, book: TimecardBook) -> None:
