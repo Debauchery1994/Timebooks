@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from reportlab.lib.units import inch
 
 from . import checks as ck
-from . import expenses
+from . import expenses, money
 from .models import Expense, Vendor, VendorPayment
 
 if TYPE_CHECKING:
@@ -59,9 +59,11 @@ def next_check_number(book: "TimecardBook") -> int:
 
 
 def unpaid_bills(book: "TimecardBook", vendor: Vendor) -> list[Expense]:
-    """The vendor's approved expenses marked 'paid by check' with no check yet: the bills a check can pay."""
+    """The vendor's approved expenses marked 'paid by check' with no check yet: the bills a check can pay. A bill
+    already reconciled, or dated in closed books, is left out: paying it would change a finished period."""
     return sorted((e for e in book.expenses
                    if e.status != "Draft" and e.payment_method == "Check" and not e.check_number
+                   and f"exp:{e.expense_id}" not in book.cleared and not money.is_closed(book, e.expense_date)
                    and (e.vendor_id == vendor.vendor_id or (not e.vendor_id and e.vendor.strip().lower()
                                                             == vendor.name.strip().lower()))),
                   key=lambda e: (e.expense_date, e.expense_id))

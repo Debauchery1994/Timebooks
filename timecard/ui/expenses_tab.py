@@ -750,6 +750,7 @@ class ExpensesTab(PinLockable, ttk.Frame):
             self.tree.heading(c, text=h + ((" ▼" if self.sort_desc else " ▲") if c == self.sort_col else ""))
         self.tree.delete(*self.tree.get_children())
         total = Decimal("0")
+        cat = self.cb_cat.get() if self.cb_cat.current() > 0 else ""   # a category filter counts only that part
         for e in items:
             paid = e.payment_method + (f" #{e.check_number}" if e.check_number else "")
             draft = e.status == "Draft"
@@ -759,12 +760,13 @@ class ExpensesTab(PinLockable, ttk.Frame):
                                      e.vendor + ("  (draft)" if draft else "") + ("  ⚠ duplicate?" if dup else ""),
                                      e.category, fmt_money(e.amount), fmt_money(e.tax) if e.tax else "", paid,
                                      "Yes" if e.receipt_file else "", e.memo))
-            total += 0 if draft else e.amount
+            total += 0 if draft else sum((a for c, a in expenses.parts(e) if not cat or c == cat), Decimal("0"))
         self.tree.insert("", "end", iid="__total__", tags=("total",),
                          values=(f"{len(items)} shown", "", "", fmt_money(total), "", "", "", ""))
         self.ctree.delete(*self.ctree.get_children())
-        for cat, amt in expenses.totals_by_category(items):
-            self.ctree.insert("", "end", values=(cat, fmt_money(amt)))
+        for c, amt in expenses.totals_by_category(items):
+            if not cat or c == cat:
+                self.ctree.insert("", "end", values=(c, fmt_money(amt)))
 
     def _selected(self) -> Expense | None:
         sel = [i for i in self.tree.selection() if i != "__total__"]

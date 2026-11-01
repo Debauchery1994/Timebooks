@@ -107,7 +107,10 @@ class AccountsDialog(ModalDialog):
         self.v_open = tk.StringVar()
         ttk.Label(f, text=f"Balance on 1/1/{self.book.company.year}").grid(row=2, column=2, sticky="w", padx=(10, 4),
                                                                        pady=2)
-        ttk.Entry(f, textvariable=self.v_open, width=12).grid(row=2, column=3, sticky="w", pady=2)
+        # balances follow the Accounts tab's PIN lock: shown (and the Jan 1 balance editable) only while it's open
+        self.show_balances = not self.app.accounts_tab.locked
+        ttk.Entry(f, textvariable=self.v_open, width=12,
+                  state="normal" if self.show_balances else "disabled").grid(row=2, column=3, sticky="w", pady=2)
         b = ttk.Frame(f)
         b.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
         ttk.Button(b, text="Add", command=self.add).pack(side="left")
@@ -133,9 +136,9 @@ class AccountsDialog(ModalDialog):
         for a in self._active():
             out = totals.get(a.account_id)
             bal = money.balance(self.book, a.account_id)
+            shown = (fmt_money(bal) if bal >= 0 else f"-{fmt_money(-bal)}") if self.show_balances else "(locked)"
             self.tree.insert("", "end", iid=a.account_id, values=(a.name, a.kind, a.last4,
-                                                                 fmt_money(out.money_out) if out else "",
-                                                                 fmt_money(bal) if bal >= 0 else f"-{fmt_money(-bal)}"))
+                                                                 fmt_money(out.money_out) if out else "", shown))
         accts = self._active()
         self.cb_checks["values"] = ["(not set)"] + [a.name for a in accts]
         cur = self.book.accounts.get(self.book.company.checks_account_id)
@@ -147,14 +150,18 @@ class AccountsDialog(ModalDialog):
             self.v_name.set(a.name)
             self.v_kind.set(a.kind)
             self.v_last4.set(a.last4)
-            self.v_open.set(f"{a.opening_balance:.2f}")
+            self.v_open.set(f"{a.opening_balance:.2f}" if self.show_balances else "")
 
-    def _values(self) -> tuple[str, str, str, Decimal] | None:
+    def _values(self, new: bool = False) -> tuple[str, str, str, Decimal] | None:
         name = self.v_name.get().strip()
         last4 = "".join(ch for ch in self.v_last4.get() if ch.isdigit())[-4:]
         if not name:
             messagebox.showwarning("Accounts", "Enter a name for the account, e.g. Business checking.", parent=self)
             return None
+        sel = self.book.accounts.get((self.tree.selection() or [""])[0])
+        if not self.show_balances:   # locked: keep the balance it has
+            return name, self.v_kind.get() or "Checking", last4, \
+                sel.opening_balance if sel and not new else Decimal("0")
         try:
             opening = parse_money(self.v_open.get()) if self.v_open.get().strip() else Decimal("0")
         except ValueError as exc:
@@ -163,7 +170,7 @@ class AccountsDialog(ModalDialog):
         return name, self.v_kind.get() or "Checking", last4, opening
 
     def add(self) -> None:
-        v = self._values()
+        v = self._values(new=True)
         if v:
             aid = vendors.next_account_id(self.book.accounts)
             self.book.accounts[aid] = Account(aid, *v)

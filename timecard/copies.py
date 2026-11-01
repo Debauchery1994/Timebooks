@@ -28,7 +28,7 @@ from . import paths
 if TYPE_CHECKING:
     from .models import Company
 
-KEEP_SAVES = 40
+KEEP_SAVES = 1000   # ~13,000 characters, well under a cell's limit; a long day of automatic saves fits
 
 
 def stamp_save(company: "Company", now: datetime | None = None) -> None:
@@ -84,7 +84,7 @@ def read_stamp(path: str | Path) -> Stamp | None:
                  values.get("last_saved_at", ""))
 
 
-def compare(mine: list[str], other: list[str]) -> str:
+def compare(mine: list[str], other: list[str], mine_at: str = "", other_at: str = "") -> str:
     if not mine or not other:
         return "same"
     if mine[0] == other[0]:
@@ -93,6 +93,9 @@ def compare(mine: list[str], other: list[str]) -> str:
         return "other_newer"
     if other[0] in mine:
         return "this_newer"
+    if (len(mine) >= KEEP_SAVES or len(other) >= KEEP_SAVES) and mine_at and other_at and mine_at != other_at:
+        # one copy is so far ahead that the other's last save has dropped off its history: the later save wins
+        return "other_newer" if other_at > mine_at else "this_newer"
     return "split"
 
 
@@ -143,7 +146,7 @@ def other_copies(workbook: str | Path, company: "Company", drives: list[Path] | 
         s = read_stamp(p)
         if s is None or s.workbook_id != company.workbook_id:
             continue
-        status = compare(mine, s.saves)
+        status = compare(mine, s.saves, company.last_saved_at, s.saved_at)
         if status != "same":
             found.append(OtherCopy(p, status, s.saved_on, s.saved_at))
     order = {"other_newer": 0, "split": 1, "this_newer": 2}

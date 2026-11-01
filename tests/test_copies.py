@@ -18,6 +18,20 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(copies.compare(["c", "b", "a"], ["b", "a"]), "this_newer")
         self.assertEqual(copies.compare(["x", "b", "a"], ["y", "b", "a"]), "split")
 
+    def test_far_ahead_copy_is_not_a_split(self) -> None:
+        from timecard.models import Company
+        c = Company()
+        for _ in range(3):
+            copies.stamp_save(c)
+        old, old_at = copies.save_history(c.save_ids), "2026-11-01 08:00"
+        for _ in range(copies.KEEP_SAVES + 5):        # a long day of automatic saves on the PC
+            copies.stamp_save(c)
+        mine = copies.save_history(c.save_ids)
+        self.assertEqual(len(mine), copies.KEEP_SAVES)
+        self.assertEqual(copies.compare(mine, old, "2026-11-01 17:00", old_at), "this_newer")
+        self.assertEqual(copies.compare(old, mine, old_at, "2026-11-01 17:00"), "other_newer")
+        self.assertEqual(copies.compare(["x", "b"], ["y", "b"], "2026-11-01 09:00", "2026-11-01 10:00"), "split")
+
 
 class CopiesTests(unittest.TestCase):
     def setUp(self) -> None:

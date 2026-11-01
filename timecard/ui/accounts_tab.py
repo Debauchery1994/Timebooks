@@ -364,6 +364,10 @@ class AccountsTab(PinLockable, ttk.Frame):
     def book(self):
         return self.app.book
 
+    def pin_required(self, company) -> bool:
+        """Locked when Accounts is, and also when Pay & Checks or Expenses is: the register shows their amounts."""
+        return any(getattr(company, f"lock_{k}", False) for k in ("accounts", "payroll", "expenses"))
+
     def on_pin_unlock(self, quiet: bool) -> None:
         self.refresh()
         super().on_pin_unlock(quiet)

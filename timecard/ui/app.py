@@ -859,6 +859,8 @@ class App(tk.Tk):
                                    parent=self):
             return False
         if target == (self.book.path if self.book is not None else None):
+            if self.book.dirty and not self.save():   # unsaved edits go into the file kept as a backup below
+                return False
             self._autosave_paused = True   # don't let a pending automatic save write the old book back
         elif not self.confirm_discard():
             return False
@@ -871,6 +873,7 @@ class App(tk.Tk):
             tmp.write_bytes(data)
             os.replace(tmp, target)
         except OSError as exc:
+            self._autosave_paused = False
             messagebox.showerror("Restore from Backup", f"The backup couldn't be put in place:\n{exc}", parent=self)
             return False
         log.info("Restored %s to %s (kept %s)", src, target, kept)

@@ -112,3 +112,18 @@ class SplitExpenseTests(unittest.TestCase):
         got = next(x for x in again.expenses if x.expense_id == "X0009")
         self.assertEqual((got.category, got.splits), (expenses.SPLIT, [("Parts", D("120.00")), ("Supplies", D("30.00"))]))
         self.assertEqual(money.balance(again, "A01"), D("4560.00"))   # the whole 150 left the account once
+
+
+class PayBillGuardTests(unittest.TestCase):
+    def test_reconciled_or_closed_bills_are_not_offered(self) -> None:
+        b = _book()
+        napa = b.vendors["V0001"]
+        b.expenses += [Expense("X0101", date(2026, 3, 2), "Napa", "Parts", D("10"), payment_method="Check",
+                               vendor_id="V0001", account_id="A01"),
+                       Expense("X0102", date(2026, 3, 20), "Napa", "Parts", D("20"), payment_method="Check",
+                               vendor_id="V0001", account_id="A01")]
+        self.assertEqual([e.expense_id for e in vp.unpaid_bills(b, napa)], ["X0101", "X0102"])
+        b.cleared["exp:X0102"] = date(2026, 3, 31)
+        self.assertEqual([e.expense_id for e in vp.unpaid_bills(b, napa)], ["X0101"])
+        b.company.closed_through = "2026-03-15"
+        self.assertEqual(vp.unpaid_bills(b, napa), [])
