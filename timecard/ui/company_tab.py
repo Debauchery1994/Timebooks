@@ -18,7 +18,7 @@ from .pin import PinLockable
 if TYPE_CHECKING:
     from .app import App
 
-MICR_FONT_URL = "https://www.idautomation.com/micr-fonts/e13b"
+MICR_FONT_URL = "https://github.com/alerque/gnumicr"   # GnuMICR: free (GPL); download GnuMICR.ttf there
 
 
 class CompanyTab(PinLockable, ttk.Frame):
@@ -199,7 +199,7 @@ class CompanyTab(PinLockable, ttk.Frame):
             if fname == "check_layout":
                 v.trace_add("write", lambda *_: self._update_layout_state())
             if fname == "micr_font_path":
-                ttk.Button(lf, text="Get an E-13B MICR font (opens IDAutomation's site)", style="Link.TButton",
+                ttk.Button(lf, text="Get a free E-13B MICR font (GnuMICR.ttf)", style="Link.TButton",
                            cursor="hand2", command=lambda: webbrowser.open(MICR_FONT_URL)).grid(
                     row=r + 1, column=1, sticky="w", pady=(0, 3))
                 rows[section] += 1
