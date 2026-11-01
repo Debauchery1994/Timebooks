@@ -22,7 +22,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from . import __version__, branding, calc
 from . import expenses as expenses_mod
 from .models import (
-    Account, Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip, Vendor, VendorPayment,
+    Account, Advance, Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip, Vendor, VendorPayment,
 )
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
@@ -35,20 +35,21 @@ FMT_MONEY = "$#,##0.00"
 FMT_HOURS = "0.00"
 
 EMPLOYEE_HEADERS = ["EmployeeID", "FirstName", "LastName", "Address1", "Address2",
-                    "PayType", "PayRate", "Active", "Notes", "SalaryBasis", "ClockPin", "W9OnFile", "W9Date"]
+                    "PayType", "PayRate", "Active", "Notes", "SalaryBasis", "ClockPin", "W9OnFile", "W9Date",
+                    "AdvancePerCheck"]
 TIMELOG_HEADERS = ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",
                    "LunchDeductMin", "Hours", "Notes", "SalaryHours", "HoursType", "In3", "Out3"]
 PAYROLL_HEADERS = ["CheckNumber", "CheckDate", "PeriodStart", "PeriodEnd", "EmployeeID", "Employee",
                    "RegularHours", "OvertimeHours", "RegularPay", "OvertimePay", "GrossPay",
                    "FederalTax", "StateTax", "SocialSecurity", "Medicare", "OtherDeductions",
-                   "NetPay", "Memo", "Voided", "LeaveHours", "LeavePay"]
+                   "NetPay", "Memo", "Voided", "LeaveHours", "LeavePay", "AdvanceRepaid"]
 # PayrollRecord attribute for each Payroll column (same order as PAYROLL_HEADERS).
 PAYROLL_FIELDS = ["check_number", "check_date", "period_start", "period_end", "employee_id",
                   "employee_name", "regular_hours", "overtime_hours", "regular_pay", "overtime_pay",
                   "gross_pay", "federal_tax", "state_tax", "social_security", "medicare",
-                  "other_deductions", "net_pay", "memo", "voided", "leave_hours", "leave_pay"]
+                  "other_deductions", "net_pay", "memo", "voided", "leave_hours", "leave_pay", "advance_repaid"]
 PAYROLL_MONEY = {"regular_pay", "overtime_pay", "gross_pay", "federal_tax", "state_tax",
-                 "social_security", "medicare", "other_deductions", "net_pay", "leave_pay"}
+                 "social_security", "medicare", "other_deductions", "net_pay", "leave_pay", "advance_repaid"}
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 EXPENSE_HEADERS = ["ExpenseID", "Date", "Vendor", "VendorID", "Category", "Amount", "Tax", "PaymentMethod",
                    "CheckNumber", "Memo", "ReceiptFile", "Status", "Created", "RecurringID", "PersonID", "AccountID"]
@@ -58,6 +59,7 @@ ACCOUNT_HEADERS = ["AccountID", "Name", "Type", "Last4", "OpeningBalance", "Acti
 VENDOR_PAYMENT_HEADERS = ["CheckNumber", "CheckDate", "VendorID", "Payee", "Amount", "Memo", "ExpenseIDs",
                           "AccountID", "Voided"]
 MILEAGE_HEADERS = ["TripID", "Date", "PersonID", "Person", "Purpose", "From", "To", "Miles", "Rate", "Amount", "Notes"]
+ADVANCE_HEADERS = ["AdvanceID", "EmployeeID", "Employee", "Date", "Amount", "Memo", "CarriedOver"]
 RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMethod", "Memo", "Every", "NextDate",
                      "Active", "Day"]
 
@@ -71,7 +73,8 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 #   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair); Employees ClockPin / W9OnFile / W9Date; clock_* settings
 #   7 = 1.4: Vendors, Accounts and VendorPayments sheets; Expenses AccountID
-SCHEMA_VERSION = 7
+#   8 = 1.5: Advances sheet; Employees AdvancePerCheck; Payroll AdvanceRepaid; check_background_fade
+SCHEMA_VERSION = 8
 META_KEYS = ("schema_version", "app_version")
 
 # Hours WORKED (column I): 0 for PTO/Holiday/Sick/Closed (L); the typed salary hours (K) when set; else the three
@@ -234,6 +237,7 @@ class TimecardBook:
         self.vendors: dict[str, Vendor] = {}
         self.accounts: dict[str, Account] = {}
         self.vendor_payments: list[VendorPayment] = []
+        self.advances: list[Advance] = []
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.check_background = b""
@@ -353,6 +357,11 @@ class TimecardBook:
                     vp = cls._read_vendor_payment(r)
                     if vp:
                         book.vendor_payments.append(vp)
+            if (ws := sheet("advances")) is not None:
+                for r in _rows(ws):
+                    adv = cls._read_advance(r)
+                    if adv:
+                        book.advances.append(adv)
             if (ws := sheet("mileage")) is not None:
                 for r in _rows(ws):
                     trip = cls._read_trip(r)
@@ -427,6 +436,7 @@ class TimecardBook:
             clock_pin=_text(r.get("clockpin")),
             w9_on_file=_to_bool(r.get("w9onfile")),
             w9_date=_to_date(r.get("w9date")),
+            advance_per_check=max(calc.money(_to_decimal(r.get("advancepercheck"))), Decimal("0")),
         )
 
     @staticmethod
@@ -496,6 +506,15 @@ class TimecardBook:
                              payee=_text(r.get("payee")), amount=calc.money(_to_decimal(r.get("amount"))),
                              memo=_text(r.get("memo")), expense_ids=_text(r.get("expenseids")),
                              account_id=_text(r.get("accountid")), voided=_to_bool(r.get("voided")))
+
+    @staticmethod
+    def _read_advance(r: dict[str, Any]) -> Advance | None:
+        adv_id, emp_id, d = _text(r.get("advanceid")), _text(r.get("employeeid")), _to_date(r.get("date"))
+        if not adv_id or not emp_id or d is None:
+            return None
+        return Advance(advance_id=adv_id, employee_id=emp_id, advance_date=d,
+                       amount=calc.money(_to_decimal(r.get("amount"))), memo=_text(r.get("memo")),
+                       carried_over=_to_bool(r.get("carriedover")))
 
     @staticmethod
     def _read_trip(r: dict[str, Any]) -> Trip | None:
@@ -634,6 +653,7 @@ class TimecardBook:
         self._write_vendors(wb.create_sheet("Vendors"))
         self._write_accounts(wb.create_sheet("Accounts"))
         self._write_vendor_payments(wb.create_sheet("VendorPayments"))
+        self._write_advances(wb.create_sheet("Advances"))
         if self.logo_png or self.check_background:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -650,17 +670,18 @@ class TimecardBook:
                 row[1].number_format = "@"
 
     def _write_employees(self, ws: Worksheet) -> None:
-        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30, 12, 14, 10, 12])
+        _write_header(ws, EMPLOYEE_HEADERS, [12, 14, 16, 28, 28, 10, 12, 8, 30, 12, 14, 10, 12, 14])
         for emp in sorted(self.employees.values(), key=lambda e: e.employee_id):
             ws.append([emp.employee_id, emp.first_name, emp.last_name, emp.address1, emp.address2,
                        emp.pay_type, float(calc.money(emp.pay_rate)),
                        "Yes" if emp.active else "No", emp.notes,
                        ("Per Period" if calc.salary_is_per_period(emp) else "Annual")
                        if emp.pay_type.strip().lower() == "salary" else "",
-                       emp.clock_pin, "Yes" if emp.w9_on_file else "No", emp.w9_date])
+                       emp.clock_pin, "Yes" if emp.w9_on_file else "No", emp.w9_date,
+                       float(emp.advance_per_check)])
             if emp.w9_date:
                 ws.cell(ws.max_row, 13).number_format = FMT_DATE
-            _fmt_row(ws, ws.max_row, {7: FMT_MONEY})
+            _fmt_row(ws, ws.max_row, {7: FMT_MONEY, 14: FMT_MONEY})
 
     def _write_timelog(self, ws: Worksheet) -> None:
         _write_header(ws, TIMELOG_HEADERS, [16, 12, 22, 11, 11, 11, 11, 15, 8, 30, 12, 11, 11, 11])
@@ -677,7 +698,7 @@ class TimecardBook:
                              9: FMT_HOURS, 11: FMT_HOURS, 13: FMT_TIME, 14: FMT_TIME})
 
     def _write_payroll(self, ws: Worksheet) -> None:
-        _write_header(ws, PAYROLL_HEADERS, [12, 12, 12, 12, 12, 22] + [13] * 11 + [24, 8, 12, 12])
+        _write_header(ws, PAYROLL_HEADERS, [12, 12, 12, 12, 12, 22] + [13] * 11 + [24, 8, 12, 12, 14])
         for rec in sorted(self.payroll, key=lambda p: p.check_number):
             row: list[Any] = []
             for name in PAYROLL_FIELDS:
@@ -720,6 +741,14 @@ class TimecardBook:
             ws.append([p.check_number, p.check_date, p.vendor_id, p.payee, float(p.amount), p.memo, p.expense_ids,
                        p.account_id, "Yes" if p.voided else "No"])
             _fmt_row(ws, ws.max_row, {2: FMT_DATE, 5: FMT_MONEY})
+
+    def _write_advances(self, ws: Worksheet) -> None:
+        _write_header(ws, ADVANCE_HEADERS, [10, 12, 22, 12, 12, 36, 12])
+        for a in sorted(self.advances, key=lambda a: (a.advance_date, a.advance_id)):
+            emp = self.employees.get(a.employee_id)
+            ws.append([a.advance_id, a.employee_id, emp.display_name if emp else "", a.advance_date, float(a.amount),
+                       a.memo, "Yes" if a.carried_over else "No"])
+            _fmt_row(ws, ws.max_row, {4: FMT_DATE, 5: FMT_MONEY})
 
     def _write_mileage(self, ws: Worksheet) -> None:
         _write_header(ws, MILEAGE_HEADERS, [10, 12, 10, 22, 30, 20, 20, 9, 8, 11, 30])

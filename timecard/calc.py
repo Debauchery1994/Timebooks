@@ -310,9 +310,11 @@ def salary_check_amount(employee: Employee, company: Company) -> Decimal:
 
 def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *,
                     check_number: int, check_date: date, period_start: date, period_end: date,
-                    other_deductions: Decimal = Decimal("0"), memo: str = "") -> PayrollRecord:
+                    other_deductions: Decimal = Decimal("0"), memo: str = "",
+                    advance_repaid: Decimal = Decimal("0")) -> PayrollRecord:
     """Gross, flat-percent withholding estimate and net for one employee/period. Hourly people are also paid for
-    paid time off hours at their regular rate; salaried pay is the salary whatever the hours."""
+    paid time off hours at their regular rate; salaried pay is the salary whatever the hours. A cash advance paid
+    back (`advance_repaid`) comes off the net, not the gross."""
     rate = _dec(employee.pay_rate)
     if employee.pay_type.strip().lower() == "salary":
         regular_pay, overtime_pay, leave_pay = salary_check_amount(employee, company), money(0), money(0)
@@ -330,7 +332,8 @@ def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *
     ss = pct(company.social_security_pct)
     medicare = pct(company.medicare_pct)
     other = money(other_deductions)
-    net = money(gross - federal - state - ss - medicare - other)
+    advance = money(advance_repaid)
+    net = money(gross - federal - state - ss - medicare - other - advance)
     return PayrollRecord(
         check_number=check_number,
         check_date=check_date,
@@ -352,6 +355,7 @@ def compute_payroll(employee: Employee, hours: HoursSummary, company: Company, *
         memo=memo,
         leave_hours=_hours2(hours.paid_leave),
         leave_pay=leave_pay,
+        advance_repaid=advance,
     )
 
 

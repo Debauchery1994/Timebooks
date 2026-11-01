@@ -18,7 +18,9 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from ..models import Company
-from .. import APP_NAME, __version__, backup, branding, calc, paths, phone_upload, security, timeclock, updates
+from .. import (
+    APP_NAME, __version__, advances, backup, branding, calc, paths, phone_upload, security, timeclock, updates,
+)
 from ..storage import TimecardBook, WorkbookError
 from .common import (
     AUTOSAVE_DELAY_MS, AUTOSAVE_RETRY_MS, F, GRIDCRAFT_EXE, LOG_PATH, OLD_OUTPUT_DIR_NAME, OUTPUT_DIR_NAME, P,
@@ -769,6 +771,7 @@ class App(tk.Tk):
             book.recurring = [dataclasses.replace(r) for r in carry_from.recurring]
             book.categories = list(carry_from.categories)
             book.logo_png, book.check_background = carry_from.logo_png, carry_from.check_background
+            advances.carry_over(carry_from, book)   # what people still owe on cash advances
         return book
 
     def save(self) -> bool:

@@ -74,7 +74,7 @@ def build_statements(book: "TimecardBook", employee_ids: list[str] | None = None
             continue
         s.checks.append(r)
         s.gross += r.gross_pay
-        s.adjustments -= r.other_deductions
+        s.adjustments -= r.other_deductions + r.advance_repaid   # advances paid back count as an adjustment
         s.paid += r.net_pay
         s.monthly_paid[r.check_date.month - 1] += r.net_pay
     return sorted(by_id.values(), key=lambda s: (s.employee.last_name.lower(), s.employee.first_name.lower()))
@@ -223,7 +223,7 @@ def render_statements_pdf(book: "TimecardBook", statements: list[AnnualStatement
             crow.append([str(r.check_number), r.check_date.strftime("%m/%d/%Y"),
                          f"{r.period_start:%m/%d}–{r.period_end:%m/%d/%Y}",
                          f"{r.regular_hours + r.overtime_hours:,.2f}", _money(r.gross_pay),
-                         _signed(-r.other_deductions), _money(r.net_pay)])
+                         _signed(-r.other_deductions - r.advance_repaid), _money(r.net_pay)])
         crow.append(["", "", "Total", f"{sum((r.regular_hours + r.overtime_hours for r in s.checks), ZERO):,.2f}",
                      _money(s.gross), _signed(s.adjustments), _money(s.paid)])
         story += [Paragraph("Checks issued", h2), Spacer(1, 3),
@@ -283,7 +283,7 @@ def export_statements_xlsx(book: "TimecardBook", statements: list[AnnualStatemen
         for r in s.checks:
             wp.append([r.employee_id, s.employee.full_name, r.check_number, r.check_date, r.period_start,
                        r.period_end, float(r.regular_hours + r.overtime_hours), float(r.gross_pay),
-                       float(-r.other_deductions), float(r.net_pay), r.memo])
+                       float(-r.other_deductions - r.advance_repaid), float(r.net_pay), r.memo])
     for row in wp.iter_rows(min_row=2):
         for c in row[3:6]:
             c.number_format = "yyyy-mm-dd"

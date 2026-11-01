@@ -9,7 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import TYPE_CHECKING
 
 from ..models import HoursSummary, PayrollRecord
-from .. import calc, checks, vendor_payments
+from .. import advances, calc, checks, vendor_payments
 from .common import (
     FlowFrame, THREE_UP_LAYOUTS, _has_pay_hours, fmt_hours, fmt_money, fmt_period, is_salaried, open_file, parse_date,
     parse_money, period_index_for, style_tree,
@@ -61,10 +61,11 @@ class PayrollTab(PinLockable, ttk.Frame):
         ttk.Entry(g2, textvariable=self.v_check_date, width=12).pack(side="left", padx=6)
         ttk.Button(g2, text="Calculate", style="Accent.TButton", command=self.calculate).pack(side="left", padx=6)
 
-        cols = ("emp", "hours", "ot", "amount", "adj", "net", "memo")
+        cols = ("emp", "hours", "ot", "amount", "adj", "advance", "net", "memo")
         self.tree = ttk.Treeview(pp, columns=cols, show="headings", height=8)
         for c, h, w, a in (("emp", "Name", 200, "w"), ("hours", "Hours", 80, "e"), ("ot", "OT Hrs", 70, "e"),
                            ("amount", "Amount", 100, "e"), ("adj", "Adjustment ✎", 110, "e"),
+                           ("advance", "Advance ✎", 100, "e"),
                            ("net", "Check Amount", 110, "e"), ("memo", "Memo ✎", 320, "w")):
             self.tree.heading(c, text=h)
             self.tree.column(c, width=w, anchor=a, stretch=(c in ("emp", "memo")))
@@ -98,7 +99,8 @@ class PayrollTab(PinLockable, ttk.Frame):
         style_tree(self.rtree)
         self.rtree.pack(fill="both", expand=True)
 
-    HINT = "Double-click Adjustment (positive deducts, negative adds, e.g. a reimbursement) or Memo to edit."
+    HINT = ("Double-click Adjustment (positive deducts, negative adds, e.g. a reimbursement), Advance (cash advance "
+            "paid back) or Memo to edit.")
 
     @property
     def book(self):
@@ -124,8 +126,8 @@ class PayrollTab(PinLockable, ttk.Frame):
         self._apply_layout()
         ot = self.ot_enabled
         if ot != self._ot_shown:
-            self.tree["displaycolumns"] = ("emp", "hours", "ot", "amount", "adj", "net", "memo") if ot else \
-                ("emp", "hours", "amount", "adj", "net", "memo")
+            self.tree["displaycolumns"] = ("emp", "hours", "ot", "amount", "adj", "advance", "net", "memo") if ot \
+                else ("emp", "hours", "amount", "adj", "advance", "net", "memo")
             self.tree.heading("hours", text="Reg Hrs" if ot else "Hours")
             self._ot_shown = ot
 
@@ -235,10 +237,20 @@ class PayrollTab(PinLockable, ttk.Frame):
         return f"Contract labor {span} \u00b7 {hours.total:.2f} hrs{off}"
 
     def _compute(self, item: dict, check_number: int, check_date: date) -> PayrollRecord:
+        """The check for a preview row. The advance paid back is held to what the person owes right now."""
         start, end = self.preview_period
+        owed = advances.balance(self.book, item["emp"].employee_id)
         return calc.compute_payroll(item["emp"], item["hours"], self.book.company, check_number=check_number,
                                     check_date=check_date, period_start=start, period_end=end,
-                                    other_deductions=item["other"], memo=item["memo"])
+                                    other_deductions=item["other"], memo=item["memo"],
+                                    advance_repaid=min(item.get("advance", Decimal("0")), owed))
+
+    def _plan_advance(self, item: dict, check_date: date) -> None:
+        """Fill in the advance paid back: the person's per-check amount, but never more than they owe or than the
+        check (e.g. 25.00 a check with 10.00 owed takes 10.00)."""
+        item["advance"] = Decimal("0")
+        before = self._compute(item, 0, check_date)
+        item["advance"] = advances.repayment_for(self.book, item["emp"], before.net_pay)
 
     def calculate(self) -> None:
         if self.book is None:
@@ -250,7 +262,9 @@ class PayrollTab(PinLockable, ttk.Frame):
         if p is None or cd is None:
             return
         start, end = p
-        keep = {k: (v["other"], v["memo"]) for k, v in self.preview.items()} if self.preview_period == p else {}
+        # typed-in adjustments, memos and advance amounts stay; an advance not typed in is planned again
+        keep = {k: (v["other"], v["memo"], v["advance"] if v.get("advance_typed") else None)
+                for k, v in self.preview.items()} if self.preview_period == p else {}
         self.preview.clear()
         self.preview_period = p
         already = {r.employee_id for r in self.book.records_for_period(start, end) if not r.voided}
@@ -266,8 +280,12 @@ class PayrollTab(PinLockable, ttk.Frame):
             if not self.book.has_pay_rate(emp.employee_id):
                 no_rate.append(emp.full_name)
                 continue
-            other, memo = keep.get(emp.employee_id, (Decimal("0"), self.default_memo(start, end, hours, is_salaried(emp))))
-            item = dict(emp=emp, hours=hours, other=other, memo=memo, dup=emp.employee_id in already)
+            other, memo, adv = keep.get(emp.employee_id, (Decimal("0"), self.default_memo(
+                start, end, hours, is_salaried(emp)), None))
+            item = dict(emp=emp, hours=hours, other=other, memo=memo, dup=emp.employee_id in already, advance=adv,
+                        advance_typed=adv is not None)
+            if adv is None:
+                self._plan_advance(item, cd)
             item["record"] = self._compute(item, 0, cd)
             self.preview[emp.employee_id] = item
             if item["dup"]:
@@ -305,13 +323,14 @@ class PayrollTab(PinLockable, ttk.Frame):
 
     def _render_preview(self) -> None:
         self.tree.delete(*self.tree.get_children())
-        tot_h = tot_ot = tot_amt = tot_adj = tot_net = Decimal("0")
+        tot_h = tot_ot = tot_amt = tot_adj = tot_adv = tot_net = Decimal("0")
         for eid, item in sorted(self.preview.items(), key=lambda kv: kv[1]["emp"].display_name.lower()):
             r: PayrollRecord = item["record"]
             tot_h += r.regular_hours
             tot_ot += r.overtime_hours
             tot_amt += r.gross_pay
             tot_adj += r.other_deductions
+            tot_adv += r.advance_repaid
             tot_net += r.net_pay
             hrs = r.regular_hours if self.ot_enabled else r.regular_hours + r.overtime_hours
             hrs_txt = "Salaried" if is_salaried(item["emp"]) and not (r.regular_hours + r.overtime_hours) \
@@ -319,12 +338,14 @@ class PayrollTab(PinLockable, ttk.Frame):
             name = item["emp"].display_name + ("  (already paid)" if item["dup"] else "")
             self.tree.insert("", "end", iid=eid, tags=("dup",) if item["dup"] else (),
                              values=(name, hrs_txt, fmt_hours(r.overtime_hours), fmt_money(r.gross_pay),
-                                     self._fmt_adj(r.other_deductions), fmt_money(r.net_pay), r.memo))
+                                     self._fmt_adj(r.other_deductions), self._fmt_adj(r.advance_repaid),
+                                     fmt_money(r.net_pay), r.memo))
         if self.preview:
             self.tree.insert("", "end", iid="__total__", tags=("total",),
                              values=(f"Total ({len(self.preview)} checks)",
                                      fmt_hours(tot_h if self.ot_enabled else tot_h + tot_ot), fmt_hours(tot_ot),
-                                     fmt_money(tot_amt), self._fmt_adj(tot_adj), fmt_money(tot_net), ""))
+                                     fmt_money(tot_amt), self._fmt_adj(tot_adj), self._fmt_adj(tot_adv),
+                                     fmt_money(tot_net), ""))
 
     @staticmethod
     def _fmt_adj(x: Decimal) -> str:
@@ -343,6 +364,8 @@ class PayrollTab(PinLockable, ttk.Frame):
             return
         if name == "adj":
             self.edit_adjustment(iid)
+        elif name == "advance":
+            self.edit_advance(iid)
         elif name == "memo":
             self.edit_memo(iid)
         else:
@@ -366,10 +389,46 @@ class PayrollTab(PinLockable, ttk.Frame):
             return
         trial = dict(item, other=amt)
         rec = self._compute(trial, 0, cd)
+        if rec.net_pay < 0 and rec.advance_repaid:   # take less of the advance back rather than refuse
+            trial["advance"] = max(rec.advance_repaid + rec.net_pay, Decimal("0"))
+            rec = self._compute(trial, 0, cd)
         if rec.net_pay < 0:
             messagebox.showwarning("Adjustment", "That would make the check amount negative.", parent=self)
             return
-        item["other"], item["record"] = amt, rec
+        item["other"], item["advance"], item["record"] = amt, trial.get("advance", item["advance"]), rec
+        self._render_preview()
+
+    def edit_advance(self, eid: str) -> None:
+        item = self.preview[eid]
+        emp = item["emp"]
+        owed = advances.balance(self.book, emp.employee_id)
+        if not owed and not item["advance"]:
+            messagebox.showinfo("Advance", f"{emp.full_name} doesn't owe anything on cash advances. Add an advance "
+                                "on the Employees tab.", parent=self)
+            return
+        s = simpledialog.askstring(
+            "Advance", f"Cash advance paid back out of this check for {emp.full_name}:\n"
+            f"they owe {fmt_money(owed)} (usually {fmt_money(emp.advance_per_check)} a check; 0 to skip this check)",
+            initialvalue=f"{item['advance']:.2f}", parent=self)
+        if s is None:
+            return
+        try:
+            amt = parse_money(s or "0")
+        except ValueError as exc:
+            messagebox.showwarning("Advance", str(exc), parent=self)
+            return
+        if amt < 0 or amt > owed:
+            messagebox.showwarning("Advance", f"Enter 0 to {fmt_money(owed)} (what {emp.full_name} owes).",
+                                   parent=self)
+            return
+        cd = self._check_date()
+        if cd is None:
+            return
+        rec = self._compute(dict(item, advance=amt), 0, cd)
+        if rec.net_pay < 0:
+            messagebox.showwarning("Advance", "That would make the check amount negative.", parent=self)
+            return
+        item["advance"], item["record"], item["advance_typed"] = amt, rec, True
         self._render_preview()
 
     def edit_memo(self, eid: str) -> None:

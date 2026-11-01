@@ -148,6 +148,7 @@ class _CheckStandIn:
     overtime_hours: Decimal = ZERO
     leave_hours: Decimal = ZERO
     other_deductions: Decimal = ZERO
+    advance_repaid: Decimal = ZERO
     period_start: date | None = None
     period_end: date | None = None
     voided: bool = False

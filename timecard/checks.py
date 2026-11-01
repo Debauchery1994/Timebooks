@@ -32,7 +32,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from . import branding, calc
+from . import advances, branding, calc
 from .models import Company, Employee, PayrollRecord, TimeEntry
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -616,7 +616,9 @@ def _render_manual(live, book, out: Path, sp: int, sample: bool = False) -> Path
 
 # --------------------------------------------------------------------------- voucher
 def _draw_simple_stub(pg: _Page, top: float, company: Company, rec: PayrollRecord, payee: str,
-                      copy_label: str, logo: bytes = b"") -> None:
+                      copy_label: str, logo: bytes = b"", advance_left: Decimal | None = None) -> None:
+    """Voucher stub. ``advance_left`` is what the person still owes on cash advances after this check (shown with
+    the advance paid back, when the check paid some back)."""
     T = lambda d: top + d  # noqa: E731
     ink, _tint = _brand(company)
     lw = _draw_logo(pg.c, logo, 0.5 * inch, pg.y(T(0.08)), 1.4 * inch, 0.45 * inch)
@@ -653,6 +655,10 @@ def _draw_simple_stub(pg: _Page, top: float, company: Company, rec: PayrollRecor
     if _dec(rec.leave_hours):
         lines.append(("Time Off Hours", _hours(_dec(rec.leave_hours))))
     lines += [("Amount", _money(rec.gross_pay)), ("Adjustment", _signed_adjustment(rec))]
+    if _dec(rec.advance_repaid):
+        lines.append(("Advance Repaid", "-" + _money(rec.advance_repaid)))
+        if advance_left is not None:
+            lines.append(("Advance Balance", _money(advance_left)))
     t = ht + 0.38
     for lab, val in lines:
         pg.text(tx + 0.08, t, lab, "Helvetica", 8.5)
@@ -676,8 +682,11 @@ def _render_voucher(live, book, out: Path, sample: bool = False) -> Path:
         _apply_offset(c, company)
         pg = _Page(c)
         _draw_perforations(pg)
-        _draw_simple_stub(pg, 3.5, company, rec, payee, "Payee Copy", stub_logo)
-        _draw_simple_stub(pg, 7.0, company, rec, payee, "Company Copy", stub_logo)
+        left = None
+        if not sample and _dec(rec.advance_repaid) and hasattr(book, "advances"):
+            left = advances.balance_after(book, rec)
+        _draw_simple_stub(pg, 3.5, company, rec, payee, "Payee Copy", stub_logo, left)
+        _draw_simple_stub(pg, 7.0, company, rec, payee, "Company Copy", stub_logo, left)
         if sample:
             _draw_rulers(c)
         c.restoreState()
@@ -947,7 +956,7 @@ def render_register(records: list[PayrollRecord], book: "TimecardBook", out_path
                       ("Soc Sec", "social_security"), ("Medicare", "medicare")):
         if any_nonzero(attr):
             cols.append((hdr, (lambda a: lambda r: _dec(getattr(r, a)))(attr), "money", 0.75))
-    cols += [("Adjustment", lambda r: _dec(r.other_deductions), "money", 0.85),
+    cols += [("Adjustment", lambda r: _dec(r.other_deductions) + _dec(r.advance_repaid), "money", 0.85),
              ("Check Amount", lambda r: _dec(r.net_pay), "money", 0.95),
              ("Void", lambda r: "VOID" if r.voided else "", "text", 0.4)]
 

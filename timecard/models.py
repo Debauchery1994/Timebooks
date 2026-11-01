@@ -103,6 +103,7 @@ class Employee:
     clock_pin: str = ""        # 4-digit phone clock-in PIN, stored hashed (timeclock.hash_clock_pin); "" = none
     w9_on_file: bool = False   # a signed W-9 is on file (kept on paper; no tax IDs stored here)
     w9_date: date | None = None
+    advance_per_check: Decimal = Decimal("0")   # taken off each paycheck until cash advances are paid back (1.5)
 
     @property
     def display_name(self) -> str:
@@ -169,6 +170,21 @@ class PayrollRecord:
     # of gross_pay). Salaried checks record the hours with no extra pay.
     leave_hours: Decimal = Decimal("0")
     leave_pay: Decimal = Decimal("0")
+    # Cash advance paid back out of this check (1.5): comes off the check amount like an adjustment, but not off the
+    # pay (gross), so the 1099 total is unchanged. Voiding the check puts it back on what the person owes.
+    advance_repaid: Decimal = Decimal("0")
+
+
+@dataclass
+class Advance:
+    """A cash advance: money advanced to a person, interest free, paid back in full out of their checks (1.5).
+    Not an expense of the business: it's owed back."""
+    advance_id: str
+    employee_id: str
+    advance_date: date
+    amount: Decimal = Decimal("0")
+    memo: str = ""
+    carried_over: bool = False   # last year's unpaid balance, opening a new year's workbook (not advanced this year)
 
 
 @dataclass

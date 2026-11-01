@@ -10,10 +10,11 @@ from tkinter import ttk
 from typing import TYPE_CHECKING
 
 from ..models import TimeEntry
-from .. import calc, checks
+from .. import advances, calc, checks
 from ..storage import TimecardBook
 from .common import (
-    F, FlowFrame, ScrollFrame, fmt_hours, fmt_period, is_salaried, open_file, paint_cell, period_index_for, set_invalid,
+    F, FlowFrame, ScrollFrame, fmt_hours, fmt_money, fmt_period, is_salaried, open_file, paint_cell, period_index_for,
+    set_invalid,
 )
 from .clock_dialog import ClockQrDialog
 from .pin import PinLockable
@@ -109,6 +110,20 @@ class TimeCardTab(PinLockable, ttk.Frame):
             self.foot_boxes[key] = box
         self._foot_layout: tuple | None = None
         self._layout_footer()
+        # what the person owes on cash advances (read only; set on the Employees tab, paid back in Pay & Checks)
+        self.adv_box = ttk.Frame(foot, style="CardInner.TFrame")
+        ttk.Label(self.adv_box, text="Advance owed", style="CardMuted.TLabel").pack(anchor="e")
+        self.v_advance = tk.StringVar(value="")
+        ttk.Label(self.adv_box, textvariable=self.v_advance, style="CardBig.TLabel").pack(anchor="e")
+
+    def _show_advance(self) -> None:
+        eid = self.selected_eid() if self.book is not None else None
+        owed = advances.balance(self.book, eid) if eid else Decimal("0")
+        if owed:
+            self.v_advance.set(fmt_money(owed))
+            self.adv_box.pack(side="right")
+        else:
+            self.adv_box.pack_forget()
 
     def _layout_footer(self, show_leave: bool = False) -> None:
         """Regular / Overtime / Total when overtime is enabled, otherwise just Total; plus Time off for salaried
@@ -484,6 +499,7 @@ class TimeCardTab(PinLockable, ttk.Frame):
             self._fill_hours_type(row, e)
 
     def update_totals(self) -> None:
+        self._show_advance()
         if self.book is None or not self.rows:
             self._layout_footer()
             self.v_reg.set("0.00")
