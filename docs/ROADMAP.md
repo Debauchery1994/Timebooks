@@ -30,17 +30,20 @@ checks, and keeping track of what the business spends and takes in, all in one w
 
 ## Coming next
 
-### 1.6 — Jobs and time off
+### 1.6 — The shop: jobs, time off and sales
+Built as one release, because jobs, customers and sales share the same records.
+
+**Jobs and time off**
 - **Jobs**: tag hours, parts and mileage to a job or customer; per-worker commission rates; see what each job cost
   and what it brought in
 - **PTO balances**: hours earned, used and left, with a yearly allowance after a waiting period
 
-### 1.7 — Sales
+**Sales**
 - Record sales and deposits; simple numbered invoices you can print, save or email from your own email program
 - Who owes what, with 30/60/90-day aging and printable customer statements
 - Sales tax report: collected vs. paid for each filing period
 
-### 1.8 — Reports and taxes
+### 1.7 — Reports and taxes
 - Profit & loss by month, quarter or year; spending by category and vendor; sales by month and customer
 - A tax-professional pack (P&L, expenses by Schedule C category, 1099 totals, annual statements) as PDF and Excel
 - Quarterly estimated tax helper and a 1099 reference sheet for your tax preparer
