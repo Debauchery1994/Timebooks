@@ -207,6 +207,15 @@ class ExpenseDialog(ModalDialog):
             recurring_id=self.e.recurring_id,
             person_id=self.people[max(w["account"].current(), 0)][0] or "",
             account_id=paid_from, splits=list(self.splits))
+        was_counted = self.e.status != "Draft" and (self.e.vendor or self.e.amount)
+        money_fields = lambda x: (x.expense_date, x.vendor, x.category, x.amount, x.tax, x.splits,  # noqa: E731
+                                  x.payment_method, x.check_number, x.account_id, x.status)
+        if money_fields(self.result) != money_fields(self.e) and (
+                (was_counted and money.is_closed(self.book, self.e.expense_date))
+                or (self.status != "Draft" and money.is_closed(self.book, d))):
+            self.result = None
+            messagebox.showwarning("Expense", money.closed_message(self.book), parent=self)
+            return False
         return True
 
 
@@ -822,6 +831,9 @@ class ExpensesTab(PinLockable, ttk.Frame):
         if e is None:
             return
         paid = vp.payment_for(self.book, e) if e.check_number else None
+        if e.status != "Draft" and money.is_closed(self.book, e.expense_date):
+            messagebox.showinfo("Delete expense", money.closed_message(self.book), parent=self)
+            return
         done = money.cleared_on(self.book, f"exp:{e.expense_id}")
         if done:
             messagebox.showinfo("Delete expense", f"{e.vendor} {fmt_money(e.amount)} was reconciled with the "

@@ -176,6 +176,10 @@ class AccountsDialog(ModalDialog):
         a = self.book.accounts.get((self.tree.selection() or [""])[0])
         v = self._values()
         if a and v:
+            if v[3] != a.opening_balance and money.closed_through(self.book) is not None:
+                messagebox.showwarning("Accounts", "The books are closed, so the balance on Jan 1 can't change. "
+                                       "Reopen the books on the Accounts tab first.", parent=self)
+                return
             a.name, a.kind, a.last4, a.opening_balance = v
             self.app.mark_dirty()
             self.fill()

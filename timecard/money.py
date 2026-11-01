@@ -172,6 +172,27 @@ def cleared_on(book: "TimecardBook", key: str) -> date | None:
     return book.cleared.get(key)
 
 
+# ---- closing the books
+
+def closed_through(book: "TimecardBook") -> date | None:
+    try:
+        return date.fromisoformat(book.company.closed_through) if book.company.closed_through else None
+    except ValueError:
+        return None
+
+
+def is_closed(book: "TimecardBook", *dates: date | None) -> bool:
+    """True if any of the dates is on or before the day the books are closed through."""
+    end = closed_through(book)
+    return end is not None and any(d is not None and d <= end for d in dates)
+
+
+def closed_message(book: "TimecardBook") -> str:
+    end = closed_through(book)
+    return (f"The books are closed through {end:%m/%d/%Y}, so nothing dated then can be changed. To change it, "
+            "reopen the books on the Accounts tab (Close Books) first.")
+
+
 # ---- a new year's workbook
 
 def carry_over(old: "TimecardBook", new: "TimecardBook") -> None:

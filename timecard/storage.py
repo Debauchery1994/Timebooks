@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
-from . import __version__, branding, calc, copies
+from . import __version__, branding, calc, copies, history
 from . import expenses as expenses_mod
 from .models import (
     Account, AccountEntry, Advance, Company, Employee, Expense, PayrollRecord, Reconciliation, Recurring, TimeEntry,
@@ -64,6 +64,7 @@ SPLIT_HEADERS = ["ExpenseID", "Category", "Amount"]
 ENTRY_HEADERS = ["EntryID", "Date", "AccountID", "Kind", "Amount", "Memo", "ToAccountID", "PersonID", "Carried"]
 RECONCILE_HEADERS = ["AccountID", "StatementDate", "StatementBalance", "Finished"]
 CLEARED_HEADERS = ["Key", "StatementDate"]
+HISTORY_HEADERS = ["When", "Who", "Action", "Record", "Details"]
 ADVANCE_HEADERS = ["AdvanceID", "EmployeeID", "Employee", "Date", "Amount", "Memo", "CarriedOver"]
 RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMethod", "Memo", "Every", "NextDate",
                      "Active", "Day"]
@@ -78,7 +79,7 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 #   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair); Employees ClockPin / W9OnFile / W9Date; clock_* settings
 #   7 = 1.4: Vendors, Accounts and VendorPayments sheets; Expenses AccountID
-#   8 = 1.5: Advances, ExpenseSplits, AccountEntries, Reconciliations and Cleared sheets; Employees AdvancePerCheck; Payroll
+#   8 = 1.5: Advances, ExpenseSplits, AccountEntries, Reconciliations, Cleared and History sheets; Employees AdvancePerCheck; Payroll
 #       AdvanceRepaid; check_background_fade and the save stamp (workbook_id, save_ids, last_saved_*)
 SCHEMA_VERSION = 8
 META_KEYS = ("schema_version", "app_version")
@@ -247,6 +248,8 @@ class TimecardBook:
         self.account_entries: list[AccountEntry] = []
         self.reconciliations: list[Reconciliation] = []
         self.cleared: dict[str, date] = {}   # register line key -> statement date it was reconciled with
+        self.history: list[history.Change] = []
+        self._history_base: dict = {}        # money records as last loaded / saved (history.snapshot)
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.check_background = b""
@@ -389,6 +392,10 @@ class TimecardBook:
                     d = _to_date(r.get("statementdate"))
                     if _text(r.get("key")) and d is not None:
                         book.cleared[_text(r.get("key"))] = d
+            if (ws := sheet("history")) is not None:
+                book.history = [history.Change(_text(r.get("when")), _text(r.get("who")), _text(r.get("action")),
+                                               _text(r.get("record")), _text(r.get("details")))
+                                for r in _rows(ws) if _text(r.get("record"))]
             if (ws := sheet("advances")) is not None:
                 for r in _rows(ws):
                     adv = cls._read_advance(r)
@@ -409,6 +416,7 @@ class TimecardBook:
             wb.close()
         book.dirty = False
         book.disk_stamp = stamp
+        book._history_base = history.snapshot(book)
         return book
 
     @staticmethod
@@ -615,11 +623,15 @@ class TimecardBook:
         before = (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
                   self.company.last_saved_at)
         copies.stamp_save(self.company)   # so a PC copy and a USB copy can tell which has the newer work
+        snap = history.snapshot(self)
+        logged = len(self.history)
+        self.history += history.changes(self._history_base, snap)   # what changed since it was opened / saved
         try:
             wb = self._build_workbook()
         except Exception:
             (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
              self.company.last_saved_at) = before
+            del self.history[logged:]
             raise
         tmp_name: str | None = None
         try:
@@ -632,10 +644,12 @@ class TimecardBook:
         except PermissionError as exc:
             (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
              self.company.last_saved_at) = before
+            del self.history[logged:]
             raise WorkbookError(LOCKED_MSG) from exc
         except OSError as exc:
             (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
              self.company.last_saved_at) = before
+            del self.history[logged:]
             raise WorkbookError(f"Could not save {target.name}: {exc}") from exc
         finally:
             if tmp_name and os.path.exists(tmp_name):
@@ -645,6 +659,7 @@ class TimecardBook:
                     pass
         self.path = target
         self.dirty = False
+        self._history_base = snap
         self.disk_stamp = self._stamp(target)
         self.schema_version, self.saved_by = SCHEMA_VERSION, __version__
         return target
@@ -711,6 +726,7 @@ class TimecardBook:
         self._write_expense_splits(wb.create_sheet("ExpenseSplits"))
         self._write_account_entries(wb.create_sheet("AccountEntries"))
         self._write_reconciliations(wb.create_sheet("Reconciliations"))   # and the Cleared sheet after it
+        self._write_history(wb.create_sheet("History"))
         if self.logo_png or self.check_background:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -823,6 +839,11 @@ class TimecardBook:
         for key, d in sorted(self.cleared.items()):
             ws_cleared.append([key, d])
             _fmt_row(ws_cleared, ws_cleared.max_row, {2: FMT_DATE})
+
+    def _write_history(self, ws: Worksheet) -> None:
+        _write_header(ws, HISTORY_HEADERS, [20, 26, 10, 26, 90])
+        for c in self.history:
+            ws.append([c.when, c.who, c.action, c.record, c.details])
 
     def _write_advances(self, ws: Worksheet) -> None:
         _write_header(ws, ADVANCE_HEADERS, [10, 12, 22, 12, 12, 36, 12])

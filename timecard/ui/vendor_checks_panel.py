@@ -95,6 +95,9 @@ class VendorChecksPanel(ttk.Frame):
         r = PayBillsDialog(self, self.book, v).show()
         if r is None:
             return
+        if money.is_closed(self.book, r["check_date"]):
+            messagebox.showwarning("Pay Bills", money.closed_message(self.book), parent=self)
+            return
         try:
             p = vp.record_payment(self.book, v, **r)
         except ValueError as exc:
@@ -147,6 +150,9 @@ class VendorChecksPanel(ttk.Frame):
             messagebox.showinfo("Void Check", "Select one vendor check to void.", parent=self)
             return
         p = chosen[0]
+        if money.is_closed(self.book, p.check_date):
+            messagebox.showinfo("Void Check", money.closed_message(self.book), parent=self)
+            return
         done = money.cleared_on(self.book, f"chk:{p.check_number}")
         if done:
             messagebox.showinfo("Void Check", f"Check #{p.check_number} cleared the bank (reconciled with the "

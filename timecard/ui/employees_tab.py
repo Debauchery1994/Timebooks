@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
 from ..models import Employee
-from .. import advances, calc, statements, timeclock
+from .. import advances, calc, money, statements, timeclock
 from ..storage import TimecardBook
 from .common import (
     F, ModalDialog, fmt_money, is_salaried, open_file, parse_date, parse_money, pay_type_label, salary_amount_text,
@@ -196,6 +196,9 @@ class AdvancesDialog(ModalDialog):
         if amt <= 0:
             messagebox.showwarning("Cash Advances", "Enter the amount advanced.", parent=self)
             return
+        if money.is_closed(self.book, d):
+            messagebox.showwarning("Cash Advances", money.closed_message(self.book), parent=self)
+            return
         self.added.append((d, amt, self.e_memo.get().strip()))
         self.e_amount.delete(0, "end")
         self.e_memo.delete(0, "end")
@@ -208,6 +211,9 @@ class AdvancesDialog(ModalDialog):
                                 parent=self)
             return
         amt = next(a[2] for a in self._advances() if a[0] == aid)
+        if money.is_closed(self.book, next(a[1] for a in self._advances() if a[0] == aid)):
+            messagebox.showwarning("Cash Advances", money.closed_message(self.book), parent=self)
+            return
         left = sum((a[2] for a in self._advances() if a[0] != aid), Decimal("0"))
         if left < advances.repaid(self.book, self.emp.employee_id):
             messagebox.showwarning("Cash Advances", "Part of that advance has already been paid back from checks, "

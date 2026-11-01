@@ -5,10 +5,10 @@ from __future__ import annotations
 import tkinter as tk
 from datetime import date, timedelta
 from decimal import Decimal
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 from typing import TYPE_CHECKING
 
-from .. import calc, money
+from .. import calc, money, security
 from ..models import AccountEntry
 from .common import ModalDialog, fmt_money, parse_date, parse_money, style_tree
 from .pin import PinLockable
@@ -103,6 +103,9 @@ class EntryDialog(ModalDialog):
                                           "Choose the other account the money went into.")) if bad]
         if problems:
             messagebox.showwarning("Money In / Out", "\n".join(problems), parent=self)
+            return False
+        if money.is_closed(self.book, d):
+            messagebox.showwarning("Money In / Out", money.closed_message(self.book), parent=self)
             return False
         person = self.owners[max(self.cb_owner.current(), 0)][0] if kind in money.OWNER_KINDS else ""
         self.result = AccountEntry(self.m.entry_id, d, acct, kind, calc.money(amt), self.e_memo.get().strip(),
@@ -223,6 +226,95 @@ class ReconcileDialog(ModalDialog):
         return True
 
 
+class CloseBooksDialog(ModalDialog):
+    """Close the books through a date (or reopen them). result = the new ISO date, or "" to open everything."""
+
+    def __init__(self, master, book):
+        self.book = book
+        super().__init__(master, "Close Books")
+
+    def body(self, f):
+        end = money.closed_through(self.book)
+        ttk.Label(f, text=(f"The books are closed through {end:%m/%d/%Y}." if end else "The books are open."),
+                  style="Bold.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(f, text="Closing a month or year stops anything dated on or before that day from being changed by "
+                  "accident: expenses, checks and voids, money in / out, advances and reconciles. You can reopen "
+                  "the books (with the PIN) to fix something.", style="Muted.TLabel", wraplength=440,
+                  justify="left").grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 8))
+        self.v = tk.StringVar(value="close")
+        ttk.Radiobutton(f, text="Close the books through", value="close", variable=self.v).grid(row=2, column=0,
+                                                                                               sticky="w")
+        self.e_date = ttk.Entry(f, width=14)
+        today = date.today()
+        self.e_date.insert(0, (date(today.year, today.month, 1) - timedelta(days=1)).isoformat())
+        self.e_date.grid(row=2, column=1, sticky="w")
+        if end is not None:
+            ttk.Radiobutton(f, text="Reopen all the books", value="open", variable=self.v).grid(
+                row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        recon = []
+        for a in sorted((a for a in self.book.accounts.values() if a.active), key=lambda a: a.name.lower()):
+            last = money.last_reconciliation(self.book, a.account_id)
+            recon.append(f"{a.name}: " + (f"reconciled through {last.statement_date:%m/%d/%Y}" if last
+                                          else "not reconciled yet"))
+        if recon:
+            ttk.Label(f, text="\n".join(recon), style="Muted.TLabel", justify="left").grid(
+                row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        return self.e_date
+
+    def apply(self) -> bool:
+        if self.v.get() == "open":
+            self.result = ""
+            return True
+        try:
+            d = parse_date(self.e_date.get())
+        except ValueError as exc:
+            messagebox.showwarning("Close Books", str(exc), parent=self)
+            return False
+        self.result = d.isoformat()
+        return True
+
+
+class HistoryDialog(ModalDialog):
+    """The workbook's change history (money records), newest first, with a search box."""
+
+    def __init__(self, master, book):
+        self.book = book
+        super().__init__(master, "Change History")
+
+    def body(self, f):
+        top = ttk.Frame(f)
+        top.pack(fill="x")
+        ttk.Label(top, text="Search").pack(side="left")
+        self.v_find = tk.StringVar()
+        e = ttk.Entry(top, textvariable=self.v_find, width=30)
+        e.pack(side="left", padx=6)
+        self.v_find.trace_add("write", lambda *_: self.fill())
+        cols = (("when", "When", 140), ("who", "Who", 170), ("action", "", 70), ("record", "Record", 170),
+                ("details", "Details", 520))
+        self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=18)
+        for c, h, w in cols:
+            self.tree.heading(c, text=h)
+            self.tree.column(c, width=w, anchor="w", stretch=(c == "details"))
+        style_tree(self.tree)
+        self.tree.pack(fill="both", expand=True, pady=(6, 0))
+        ttk.Label(f, text="Every change to money records is noted here when the workbook is saved. It travels with "
+                  "the workbook (its History sheet) and its backups.", style="Muted.TLabel").pack(anchor="w",
+                                                                                                   pady=(6, 0))
+        self.fill()
+        return e
+
+    def fill(self) -> None:
+        q = self.v_find.get().strip().lower()
+        self.tree.delete(*self.tree.get_children())
+        for c in reversed(self.book.history):
+            if q and q not in f"{c.when} {c.who} {c.action} {c.record} {c.details}".lower():
+                continue
+            self.tree.insert("", "end", values=(c.when.replace("T", " "), c.who, c.action, c.record, c.details))
+
+    def apply(self) -> bool:
+        return True
+
+
 class AccountsTab(PinLockable, ttk.Frame):
     pin_key = "accounts"
     pin_what = "Account balances"
@@ -235,7 +327,8 @@ class AccountsTab(PinLockable, ttk.Frame):
         bar.pack(fill="x")
         ttk.Button(bar, text="Money In / Out…", style="Accent.TButton", command=self.add_entry).pack(side="left")
         for text, cmd in (("Reconcile…", self.reconcile), ("Undo Last Reconcile", self.undo_reconcile),
-                          ("Edit Accounts…", self.edit_accounts)):
+                          ("Edit Accounts…", self.edit_accounts), ("Close Books…", self.close_books),
+                          ("History…", self.show_history)):
             ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=(6, 0))
         cols = (("name", "Account", 220), ("kind", "Type", 100), ("last4", "Last 4", 60), ("bal", "Balance", 120),
                 ("rec", "Reconciled through", 140))
@@ -248,6 +341,8 @@ class AccountsTab(PinLockable, ttk.Frame):
         self.atree.bind("<<TreeviewSelect>>", lambda e: self.fill_register())
         self.v_owner = tk.StringVar()
         ttk.Label(self, textvariable=self.v_owner, style="Muted.TLabel", wraplength=900).pack(anchor="w", pady=(4, 0))
+        self.v_closed = tk.StringVar()
+        ttk.Label(self, textvariable=self.v_closed, style="Muted.TLabel").pack(anchor="w")
         cols = (("date", "Date", 90), ("what", "Description", 340), ("kind", "Kind", 130), ("out", "Money out", 100),
                 ("in", "Money in", 100), ("bal", "Balance", 110), ("clr", "Cleared", 90))
         self.tree = ttk.Treeview(self, columns=[c[0] for c in cols], show="headings", selectmode="browse")
@@ -293,6 +388,8 @@ class AccountsTab(PinLockable, ttk.Frame):
         elif kids:
             self.atree.selection_set(kids[0])
         self._owner_totals()
+        end = money.closed_through(self.book)
+        self.v_closed.set(f"Books closed through {end:%m/%d/%Y}." if end else "")
         self.fill_register()
 
     def _owner_totals(self) -> None:
@@ -338,6 +435,9 @@ class AccountsTab(PinLockable, ttk.Frame):
         if m.carried or done:
             messagebox.showinfo("Accounts", "This item was reconciled (or came from last year), so it can't be "
                                 "changed. Undo the reconcile first if it's wrong.", parent=self)
+            return False
+        if money.is_closed(self.book, m.entry_date):
+            messagebox.showinfo("Accounts", money.closed_message(self.book), parent=self)
             return False
         return True
 
@@ -395,10 +495,34 @@ class AccountsTab(PinLockable, ttk.Frame):
         if last is None:
             messagebox.showinfo("Reconcile", "This account hasn't been reconciled yet.", parent=self)
             return
+        if money.is_closed(self.book, last.statement_date):
+            messagebox.showinfo("Undo Last Reconcile", money.closed_message(self.book), parent=self)
+            return
         if messagebox.askyesno("Undo Last Reconcile", f"Undo the reconcile through {last.statement_date:%m/%d/%Y}? "
                                "Its items become uncleared again.", parent=self):
             money.undo_last(self.book, aid)
             self._changed(f"Undid the reconcile through {last.statement_date:%m/%d/%Y}.")
+
+    def close_books(self) -> None:
+        if self.book is None or self.locked:
+            return
+        r = CloseBooksDialog(self, self.book).show()
+        if r is None or r == self.book.company.closed_through:
+            return
+        if security.has_pin():
+            pin = simpledialog.askstring("Close Books", "Enter the PIN to " + ("reopen" if not r else "close")
+                                         + " the books:", show="\u2022", parent=self)
+            if pin is None:
+                return
+            if not security.verify_pin(pin):
+                messagebox.showwarning("Close Books", "That PIN isn't right.", parent=self)
+                return
+        self.book.company.closed_through = r
+        self._changed(f"Books closed through {date.fromisoformat(r):%m/%d/%Y}." if r else "The books are open.")
+
+    def show_history(self) -> None:
+        if self.book is not None and not self.locked:
+            HistoryDialog(self, self.book).show()
 
     def edit_accounts(self) -> None:
         if self.book is not None and not self.locked:

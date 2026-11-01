@@ -87,6 +87,8 @@ class Company:
     check_background_fade: int = 18
     # Which copy of the workbook this is (1.5), written on every save so a PC copy and a USB copy can be compared:
     # the workbook's own id, the ids of its last saves (newest first), and where / when it was last saved.
+    # Books closed through this date (ISO, "" = open): nothing dated on or before it can be changed (1.5).
+    closed_through: str = ""
     workbook_id: str = ""
     save_ids: str = ""
     last_saved_on: str = ""

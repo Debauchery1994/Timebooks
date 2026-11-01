@@ -453,6 +453,9 @@ class PayrollTab(PinLockable, ttk.Frame):
         cd = self._check_date()
         if cd is None:
             return
+        if money.is_closed(self.book, cd):
+            messagebox.showwarning("Pay & Checks", money.closed_message(self.book), parent=self)
+            return
         items = sorted(self.preview.values(), key=lambda it: it["emp"].display_name.lower())
         dups = [it for it in items if it["dup"]]
         if dups:
@@ -565,6 +568,9 @@ class PayrollTab(PinLockable, ttk.Frame):
             return
         if rec.voided:
             messagebox.showinfo("Void Check", f"Check #{n} is already voided.", parent=self)
+            return
+        if money.is_closed(self.book, rec.check_date):
+            messagebox.showinfo("Void Check", money.closed_message(self.book), parent=self)
             return
         done = money.cleared_on(self.book, f"chk:{n}")
         if done:
