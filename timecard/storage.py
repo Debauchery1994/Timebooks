@@ -22,7 +22,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 from . import __version__, branding, calc, copies
 from . import expenses as expenses_mod
 from .models import (
-    Account, Advance, Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip, Vendor, VendorPayment,
+    Account, AccountEntry, Advance, Company, Employee, Expense, PayrollRecord, Reconciliation, Recurring, TimeEntry,
+    Trip, Vendor, VendorPayment,
 )
 
 LOGO_CHUNK = 30_000  # base64 characters per cell on the hidden Branding sheet
@@ -59,6 +60,10 @@ ACCOUNT_HEADERS = ["AccountID", "Name", "Type", "Last4", "OpeningBalance", "Acti
 VENDOR_PAYMENT_HEADERS = ["CheckNumber", "CheckDate", "VendorID", "Payee", "Amount", "Memo", "ExpenseIDs",
                           "AccountID", "Voided"]
 MILEAGE_HEADERS = ["TripID", "Date", "PersonID", "Person", "Purpose", "From", "To", "Miles", "Rate", "Amount", "Notes"]
+SPLIT_HEADERS = ["ExpenseID", "Category", "Amount"]
+ENTRY_HEADERS = ["EntryID", "Date", "AccountID", "Kind", "Amount", "Memo", "ToAccountID", "PersonID", "Carried"]
+RECONCILE_HEADERS = ["AccountID", "StatementDate", "StatementBalance", "Finished"]
+CLEARED_HEADERS = ["Key", "StatementDate"]
 ADVANCE_HEADERS = ["AdvanceID", "EmployeeID", "Employee", "Date", "Amount", "Memo", "CarriedOver"]
 RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMethod", "Memo", "Every", "NextDate",
                      "Active", "Day"]
@@ -73,7 +78,8 @@ RECURRING_HEADERS = ["RecurringID", "Vendor", "Category", "Amount", "PaymentMeth
 #   5 = 1.3.0 (part 2): Recurring and Mileage sheets, Expenses RecurringID / PersonID, the Owner pay type
 #   6 = 1.3.2: TimeLog In3 / Out3 (third punch pair); Employees ClockPin / W9OnFile / W9Date; clock_* settings
 #   7 = 1.4: Vendors, Accounts and VendorPayments sheets; Expenses AccountID
-#   8 = 1.5: Advances sheet; Employees AdvancePerCheck; Payroll AdvanceRepaid; check_background_fade
+#   8 = 1.5: Advances, ExpenseSplits, AccountEntries, Reconciliations and Cleared sheets; Employees AdvancePerCheck; Payroll
+#       AdvanceRepaid; check_background_fade and the save stamp (workbook_id, save_ids, last_saved_*)
 SCHEMA_VERSION = 8
 META_KEYS = ("schema_version", "app_version")
 
@@ -238,6 +244,9 @@ class TimecardBook:
         self.accounts: dict[str, Account] = {}
         self.vendor_payments: list[VendorPayment] = []
         self.advances: list[Advance] = []
+        self.account_entries: list[AccountEntry] = []
+        self.reconciliations: list[Reconciliation] = []
+        self.cleared: dict[str, date] = {}   # register line key -> statement date it was reconciled with
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
         self.check_background = b""
@@ -357,6 +366,29 @@ class TimecardBook:
                     vp = cls._read_vendor_payment(r)
                     if vp:
                         book.vendor_payments.append(vp)
+            if (ws := sheet("expensesplits")) is not None:
+                by_id = {e.expense_id: e for e in book.expenses}
+                for r in _rows(ws):
+                    e = by_id.get(_text(r.get("expenseid")))
+                    if e is not None and _text(r.get("category")):
+                        e.splits.append((_text(r.get("category")), calc.money(_to_decimal(r.get("amount")))))
+            if (ws := sheet("accountentries")) is not None:
+                for r in _rows(ws):
+                    m = cls._read_entry_money(r)
+                    if m:
+                        book.account_entries.append(m)
+            if (ws := sheet("reconciliations")) is not None:
+                for r in _rows(ws):
+                    d = _to_date(r.get("statementdate"))
+                    if _text(r.get("accountid")) and d is not None:
+                        book.reconciliations.append(Reconciliation(
+                            _text(r.get("accountid")), d, calc.money(_to_decimal(r.get("statementbalance"))),
+                            _text(r.get("finished"))))
+            if (ws := sheet("cleared")) is not None:
+                for r in _rows(ws):
+                    d = _to_date(r.get("statementdate"))
+                    if _text(r.get("key")) and d is not None:
+                        book.cleared[_text(r.get("key"))] = d
             if (ws := sheet("advances")) is not None:
                 for r in _rows(ws):
                     adv = cls._read_advance(r)
@@ -506,6 +538,16 @@ class TimecardBook:
                              payee=_text(r.get("payee")), amount=calc.money(_to_decimal(r.get("amount"))),
                              memo=_text(r.get("memo")), expense_ids=_text(r.get("expenseids")),
                              account_id=_text(r.get("accountid")), voided=_to_bool(r.get("voided")))
+
+    @staticmethod
+    def _read_entry_money(r: dict[str, Any]) -> AccountEntry | None:
+        entry_id, d = _text(r.get("entryid")), _to_date(r.get("date"))
+        if not entry_id or d is None or not _text(r.get("kind")):
+            return None
+        return AccountEntry(entry_id=entry_id, entry_date=d, account_id=_text(r.get("accountid")),
+                            kind=_text(r.get("kind")), amount=calc.money(_to_decimal(r.get("amount"))),
+                            memo=_text(r.get("memo")), to_account_id=_text(r.get("toaccountid")),
+                            person_id=_text(r.get("personid")), carried=_to_bool(r.get("carried")))
 
     @staticmethod
     def _read_advance(r: dict[str, Any]) -> Advance | None:
@@ -666,6 +708,9 @@ class TimecardBook:
         self._write_accounts(wb.create_sheet("Accounts"))
         self._write_vendor_payments(wb.create_sheet("VendorPayments"))
         self._write_advances(wb.create_sheet("Advances"))
+        self._write_expense_splits(wb.create_sheet("ExpenseSplits"))
+        self._write_account_entries(wb.create_sheet("AccountEntries"))
+        self._write_reconciliations(wb.create_sheet("Reconciliations"))   # and the Cleared sheet after it
         if self.logo_png or self.check_background:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
@@ -753,6 +798,31 @@ class TimecardBook:
             ws.append([p.check_number, p.check_date, p.vendor_id, p.payee, float(p.amount), p.memo, p.expense_ids,
                        p.account_id, "Yes" if p.voided else "No"])
             _fmt_row(ws, ws.max_row, {2: FMT_DATE, 5: FMT_MONEY})
+
+    def _write_expense_splits(self, ws: Worksheet) -> None:
+        _write_header(ws, SPLIT_HEADERS, [10, 24, 12])
+        for e in sorted(self.expenses, key=lambda e: e.expense_id):
+            for cat, amt in e.splits:
+                ws.append([e.expense_id, cat, float(amt)])
+                _fmt_row(ws, ws.max_row, {3: FMT_MONEY})
+
+    def _write_account_entries(self, ws: Worksheet) -> None:
+        _write_header(ws, ENTRY_HEADERS, [10, 12, 10, 22, 12, 36, 11, 10, 8])
+        for m in sorted(self.account_entries, key=lambda m: (m.entry_date, m.entry_id)):
+            ws.append([m.entry_id, m.entry_date, m.account_id, m.kind, float(m.amount), m.memo, m.to_account_id,
+                       m.person_id, "Yes" if m.carried else "No"])
+            _fmt_row(ws, ws.max_row, {2: FMT_DATE, 5: FMT_MONEY})
+
+    def _write_reconciliations(self, ws: Worksheet) -> None:
+        _write_header(ws, RECONCILE_HEADERS, [10, 14, 16, 20])
+        for r in sorted(self.reconciliations, key=lambda r: (r.account_id, r.statement_date)):
+            ws.append([r.account_id, r.statement_date, float(r.statement_balance), r.finished])
+            _fmt_row(ws, ws.max_row, {2: FMT_DATE, 3: FMT_MONEY})
+        ws_cleared = ws.parent.create_sheet("Cleared")
+        _write_header(ws_cleared, CLEARED_HEADERS, [18, 14])
+        for key, d in sorted(self.cleared.items()):
+            ws_cleared.append([key, d])
+            _fmt_row(ws_cleared, ws_cleared.max_row, {2: FMT_DATE})
 
     def _write_advances(self, ws: Worksheet) -> None:
         _write_header(ws, ADVANCE_HEADERS, [10, 12, 22, 12, 12, 36, 12])

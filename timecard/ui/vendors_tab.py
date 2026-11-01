@@ -8,6 +8,7 @@ from decimal import Decimal
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
+from .. import money
 from .. import vendor_payments as vp
 from .. import vendors
 from ..models import Account, Vendor
@@ -86,11 +87,12 @@ class AccountsDialog(ModalDialog):
         super().__init__(master, "Accounts")
 
     def body(self, f):
-        cols = (("name", "Account", 200), ("kind", "Type", 100), ("last4", "Last 4", 60), ("out", "Money out", 110))
+        cols = (("name", "Account", 200), ("kind", "Type", 100), ("last4", "Last 4", 60), ("out", "Money out", 110),
+                ("bal", "Balance", 110))
         self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=8)
         for c, h, w in cols:
             self.tree.heading(c, text=h)
-            self.tree.column(c, width=w, anchor="e" if c == "out" else "w")
+            self.tree.column(c, width=w, anchor="e" if c in ("out", "bal") else "w")
         style_tree(self.tree)
         self.tree.grid(row=0, column=0, columnspan=4, sticky="nsew")
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._load())
@@ -102,6 +104,10 @@ class AccountsDialog(ModalDialog):
                      width=12).grid(row=1, column=3, sticky="w", pady=(8, 2))
         ttk.Label(f, text="Last 4 digits").grid(row=2, column=0, sticky="w", pady=2)
         ttk.Entry(f, textvariable=self.v_last4, width=8).grid(row=2, column=1, sticky="w", pady=2)
+        self.v_open = tk.StringVar()
+        ttk.Label(f, text=f"Balance on 1/1/{self.book.company.year}").grid(row=2, column=2, sticky="w", padx=(10, 4),
+                                                                       pady=2)
+        ttk.Entry(f, textvariable=self.v_open, width=12).grid(row=2, column=3, sticky="w", pady=2)
         b = ttk.Frame(f)
         b.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
         ttk.Button(b, text="Add", command=self.add).pack(side="left")
@@ -111,8 +117,9 @@ class AccountsDialog(ModalDialog):
         self.cb_checks = ttk.Combobox(f, state="readonly", width=26)
         self.cb_checks.grid(row=4, column=1, columnspan=2, sticky="w", pady=(12, 2))
         self.cb_checks.bind("<<ComboboxSelected>>", lambda e: self._set_checks_account())
-        ttk.Label(f, text="Money out is this year's approved expenses and checks. Balances come with reconciling "
-                  "(1.5). Only the last 4 digits are kept, never the full number.", style="Muted.TLabel",
+        ttk.Label(f, text="Money out is this year's approved expenses and checks. The balance starts from the "
+                  "balance on Jan 1 (the Accounts tab shows every item). Only the last 4 digits are kept, never "
+                  "the full number.", style="Muted.TLabel",
                   wraplength=460).grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 0))
         self.fill()
         return self.tree
@@ -125,8 +132,10 @@ class AccountsDialog(ModalDialog):
         self.tree.delete(*self.tree.get_children())
         for a in self._active():
             out = totals.get(a.account_id)
+            bal = money.balance(self.book, a.account_id)
             self.tree.insert("", "end", iid=a.account_id, values=(a.name, a.kind, a.last4,
-                                                                 fmt_money(out.money_out) if out else ""))
+                                                                 fmt_money(out.money_out) if out else "",
+                                                                 fmt_money(bal) if bal >= 0 else f"-{fmt_money(-bal)}"))
         accts = self._active()
         self.cb_checks["values"] = ["(not set)"] + [a.name for a in accts]
         cur = self.book.accounts.get(self.book.company.checks_account_id)
@@ -138,14 +147,20 @@ class AccountsDialog(ModalDialog):
             self.v_name.set(a.name)
             self.v_kind.set(a.kind)
             self.v_last4.set(a.last4)
+            self.v_open.set(f"{a.opening_balance:.2f}")
 
-    def _values(self) -> tuple[str, str, str] | None:
+    def _values(self) -> tuple[str, str, str, Decimal] | None:
         name = self.v_name.get().strip()
         last4 = "".join(ch for ch in self.v_last4.get() if ch.isdigit())[-4:]
         if not name:
             messagebox.showwarning("Accounts", "Enter a name for the account, e.g. Business checking.", parent=self)
             return None
-        return name, self.v_kind.get() or "Checking", last4
+        try:
+            opening = parse_money(self.v_open.get()) if self.v_open.get().strip() else Decimal("0")
+        except ValueError as exc:
+            messagebox.showwarning("Accounts", f"Balance on Jan 1: {exc}", parent=self)
+            return None
+        return name, self.v_kind.get() or "Checking", last4, opening
 
     def add(self) -> None:
         v = self._values()
@@ -161,7 +176,7 @@ class AccountsDialog(ModalDialog):
         a = self.book.accounts.get((self.tree.selection() or [""])[0])
         v = self._values()
         if a and v:
-            a.name, a.kind, a.last4 = v
+            a.name, a.kind, a.last4, a.opening_balance = v
             self.app.mark_dirty()
             self.fill()
 

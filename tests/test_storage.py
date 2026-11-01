@@ -84,7 +84,8 @@ class StorageTests(unittest.TestCase):
         path = sample_book().save(self.dir / "acme.xlsx")
         wb = openpyxl.load_workbook(path)
         self.assertEqual(wb.sheetnames,
-                         ["Company", "Employees", "TimeLog", "Payroll", "Summary", "Expenses", "Categories", "Recurring", "Mileage", "Vendors", "Accounts", "VendorPayments", "Advances"])
+                         ["Company", "Employees", "TimeLog", "Payroll", "Summary", "Expenses", "Categories", "Recurring", "Mileage", "Vendors", "Accounts", "VendorPayments", "Advances", "ExpenseSplits", "AccountEntries",
+                      "Reconciliations", "Cleared"])
         log = wb["TimeLog"]
         self.assertEqual([c.value for c in log[1]],
                          ["Date", "EmployeeID", "Employee", "In1", "Out1", "In2", "Out2",

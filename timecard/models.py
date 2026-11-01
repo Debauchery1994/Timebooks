@@ -65,6 +65,7 @@ class Company:
     lock_payroll: bool = False
     lock_expenses: bool = False
     lock_vendors: bool = False
+    lock_accounts: bool = False
     # Branding. The logo image itself is stored by storage.py on a hidden "Branding" sheet (TimecardBook.logo_png).
     brand_color: str = "#1F3A5F"
     logo_on_checks: bool = True   # voucher stubs; the check face too on blank stock only
@@ -212,6 +213,8 @@ class Expense:
     recurring_id: str = ""             # made from this recurring expense (1.3.0)
     person_id: str = ""                # on whose account (e.g. an owner's gas), "" = the business
     account_id: str = ""               # which bank account / card paid it (Accounts), "" = not said
+    # Split across categories (1.5): [(category, amount)] adding up to `amount`; `category` is then "Split".
+    splits: list = field(default_factory=list)
 
 
 @dataclass
@@ -245,8 +248,36 @@ class Account:
     name: str
     kind: str = "Checking"     # Checking | Savings | Credit card | Cash | Other
     last4: str = ""            # the last 4 digits only, to tell accounts apart (never the full number)
-    opening_balance: Decimal = Decimal("0")
+    opening_balance: Decimal = Decimal("0")   # on Jan 1 of the workbook's year (1.5: balances start from it)
     active: bool = True
+
+
+@dataclass
+class AccountEntry:
+    """Money in or out of an account that isn't an expense or a check (1.5): deposits, owner contributions and
+    draws, loans, transfers between accounts, interest. Owner and loan money is kept out of profit and loss.
+    `amount` is positive and the kind says which way it goes (money.KINDS), except a carried item, which keeps the
+    sign it had (+ in, - out)."""
+    entry_id: str
+    entry_date: date
+    account_id: str
+    kind: str
+    amount: Decimal = Decimal("0")
+    memo: str = ""
+    to_account_id: str = ""     # Transfer: the account the money went into
+    person_id: str = ""         # Owner draw / contribution: which owner
+    carried: bool = False       # last year's uncleared item, brought into a new year's workbook for reconciling
+                                # (already in the opening balance, so it doesn't change the balance again)
+
+
+@dataclass
+class Reconciliation:
+    """An account reconciled against a bank statement (1.5): everything ticked as cleared through the statement
+    date added up to the statement's ending balance."""
+    account_id: str
+    statement_date: date
+    statement_balance: Decimal = Decimal("0")
+    finished: str = ""          # when it was finished, ISO date-time
 
 
 @dataclass

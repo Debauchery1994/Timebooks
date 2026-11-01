@@ -20,7 +20,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..models import Company
 from .. import (
-    APP_NAME, __version__, advances, backup, branding, calc, copies, paths, phone_upload, security, timeclock,
+    APP_NAME, __version__, advances, backup, branding, calc, copies, money, paths, phone_upload, security, timeclock,
     updates,
 )
 from ..storage import TimecardBook, WorkbookError
@@ -34,6 +34,7 @@ from .common import (
 from .company_tab import CompanyTab
 from .expenses_tab import ExpensesTab
 from .vendors_tab import VendorsTab
+from .accounts_tab import AccountsTab
 from .dialogs import BackupDialog, NewYearDialog, OtherCopyDialog, RestoreDialog, StartPositionDialog
 from .employees_tab import EmployeesTab
 from .payroll_tab import PayrollTab
@@ -78,12 +79,14 @@ class App(tk.Tk):
         self.payroll_tab = PayrollTab(self.nb, self)
         self.expenses_tab = ExpensesTab(self.nb, self)
         self.vendors_tab = VendorsTab(self.nb, self)
+        self.accounts_tab = AccountsTab(self.nb, self)
         self.company_tab = CompanyTab(self.nb, self)
         # The tab registry: (tab, label, the Company feature switch that shows it, or None for always shown).
         self.tab_specs = ((self.timecard_tab, "Time Card", "use_timecards"), (self.employees_tab, "Employees", None),
                           (self.yearlog_tab, "Year Log", "use_timecards"), (self.payroll_tab, "Pay & Checks",
                                                                             "use_payroll"),
                           (self.expenses_tab, "Expenses", "use_expenses"), (self.vendors_tab, "Vendors", "use_vendors"),
+                          (self.accounts_tab, "Accounts", "use_expenses"),
                           (self.company_tab, "Company Settings", None))
         for tab, text, _feature in self.tab_specs:
             self.nb.add(tab, text=f"  {text}  ")
@@ -533,6 +536,7 @@ class App(tk.Tk):
         self.payroll_tab.refresh()
         self.expenses_tab.refresh()
         self.vendors_tab.refresh()
+        self.accounts_tab.refresh()
         self.company_tab.refresh()
 
     def refresh_employees(self) -> None:
@@ -560,6 +564,8 @@ class App(tk.Tk):
             self.expenses_tab.on_shown()
         elif current is self.timecard_tab:
             self.timecard_tab.update_totals()
+        elif current is self.accounts_tab:
+            self.accounts_tab.refresh()   # expenses and checks may have changed elsewhere
 
     def commit_pending(self) -> None:
         if self.book is not None:
@@ -653,7 +659,7 @@ class App(tk.Tk):
     @property
     def lockable_tabs(self) -> tuple:
         return (self.timecard_tab, self.employees_tab, self.yearlog_tab, self.payroll_tab, self.expenses_tab,
-                self.vendors_tab, self.company_tab)
+                self.vendors_tab, self.accounts_tab, self.company_tab)
 
     @property
     def pin_tabs(self) -> list:
@@ -932,6 +938,9 @@ class App(tk.Tk):
             book.categories = list(carry_from.categories)
             book.logo_png, book.check_background = carry_from.logo_png, carry_from.check_background
             advances.carry_over(carry_from, book)   # what people still owe on cash advances
+            book.vendors = {vid: dataclasses.replace(v) for vid, v in carry_from.vendors.items()}
+            book.company.checks_account_id = carry_from.company.checks_account_id
+            money.carry_over(carry_from, book)      # accounts at last year's closing balance, uncleared items
         return book
 
     def save(self) -> bool:

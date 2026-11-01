@@ -9,7 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import TYPE_CHECKING
 
 from ..models import HoursSummary, PayrollRecord
-from .. import advances, calc, checks, vendor_payments
+from .. import advances, calc, checks, money, vendor_payments
 from .common import (
     FlowFrame, THREE_UP_LAYOUTS, _has_pay_hours, fmt_hours, fmt_money, fmt_period, is_salaried, open_file, parse_date,
     parse_money, period_index_for, style_tree,
@@ -565,6 +565,12 @@ class PayrollTab(PinLockable, ttk.Frame):
             return
         if rec.voided:
             messagebox.showinfo("Void Check", f"Check #{n} is already voided.", parent=self)
+            return
+        done = money.cleared_on(self.book, f"chk:{n}")
+        if done:
+            messagebox.showinfo("Void Check", f"Check #{n} cleared the bank (reconciled with the {done:%m/%d/%Y} "
+                                "statement), so it can't be voided. Undo that reconcile on the Accounts tab first.",
+                                parent=self)
             return
         if not messagebox.askyesno("Void Check", f"Void check #{n} to {rec.employee_name} for "
                                    f"{fmt_money(rec.net_pay)}?\n\nThe check stays in the log marked Voided.",

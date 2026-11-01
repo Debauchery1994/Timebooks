@@ -117,10 +117,19 @@ def receipt_path(e: Expense, workbook: str | Path | None) -> Path | None:
     return p if p.is_absolute() else Path(workbook).parent / p
 
 
+SPLIT = "Split"   # the category shown for an expense split across categories (1.5)
+
+
+def parts(e: Expense) -> list[tuple[str, Decimal]]:
+    """(category, amount) for each part of the expense: its splits, or the whole amount in its one category."""
+    return list(e.splits) if e.splits else [(e.category or "Other", e.amount)]
+
+
 def matches(e: Expense, month: int | None = None, category: str = "", vendor: str = "") -> bool:
-    """Filter used by the Expenses tab: month 1-12 (None = all), exact category, vendor contains (any case)."""
+    """Filter used by the Expenses tab: month 1-12 (None = all), exact category (any part of a split expense),
+    vendor contains (any case)."""
     return ((month is None or e.expense_date.month == month)
-            and (not category or e.category == category)
+            and (not category or e.category == category or any(c == category for c, _a in parts(e)))
             and (not vendor or vendor.strip().lower() in e.vendor.lower()))
 
 
@@ -129,7 +138,8 @@ def totals_by_category(expenses: list[Expense]) -> list[tuple[str, Decimal]]:
     totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for e in expenses:
         if e.status != "Draft":
-            totals[e.category or "Other"] += e.amount
+            for cat, amt in parts(e):
+                totals[cat or "Other"] += amt
     return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
@@ -166,7 +176,8 @@ def vendors(expenses: list[Expense]) -> list[str]:
 
 def last_category_for(expenses: list[Expense], vendor: str) -> str:
     """The category used last time for this vendor (so the next expense from them suggests it), or ''."""
-    same = [e for e in expenses if e.vendor.strip().lower() == vendor.strip().lower() and e.category]
+    same = [e for e in expenses if e.vendor.strip().lower() == vendor.strip().lower() and e.category
+            and e.category != SPLIT]
     return max(same, key=lambda e: (e.expense_date, e.expense_id)).category if same else ""
 
 
@@ -189,7 +200,8 @@ def next_recurring_id(items: list[Recurring]) -> str:
 
 def recurring_from(e: Expense, every: str, recurring_id: str) -> Recurring:
     """Make `e` repeat: the next one is due one period after it."""
-    return Recurring(recurring_id=recurring_id, vendor=e.vendor, category=e.category, amount=e.amount,
+    category = max(parts(e), key=lambda p: p[1])[0] if e.splits else e.category   # a split: its biggest part
+    return Recurring(recurring_id=recurring_id, vendor=e.vendor, category=category, amount=e.amount,
                      payment_method=e.payment_method, memo=e.memo, every=every,
                      next_date=add_period(e.expense_date, every), active=True, day=e.expense_date.day)
 

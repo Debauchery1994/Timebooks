@@ -7,6 +7,7 @@ from datetime import date
 from tkinter import messagebox, ttk
 from typing import TYPE_CHECKING
 
+from .. import money
 from .. import vendor_payments as vp
 from .common import fmt_money, open_file, style_tree
 from .vendors_tab import AccountsDialog, NewVendorDialog, PayBillsDialog, add_vendor
@@ -146,6 +147,12 @@ class VendorChecksPanel(ttk.Frame):
             messagebox.showinfo("Void Check", "Select one vendor check to void.", parent=self)
             return
         p = chosen[0]
+        done = money.cleared_on(self.book, f"chk:{p.check_number}")
+        if done:
+            messagebox.showinfo("Void Check", f"Check #{p.check_number} cleared the bank (reconciled with the "
+                                f"{done:%m/%d/%Y} statement), so it can't be voided. Undo that reconcile on the "
+                                "Accounts tab first.", parent=self)
+            return
         if not messagebox.askyesno("Void Check", f"Void check #{p.check_number} to {p.payee} for "
                                    f"{fmt_money(p.amount)}? The bills it paid become unpaid again; the number "
                                    "isn't reused.", parent=self):

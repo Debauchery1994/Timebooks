@@ -83,6 +83,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         ("Locked by PIN", "lock_payroll", "Pay & Checks", "bool", "Lock the Pay & Checks tab"),
         ("Locked by PIN", "lock_expenses", "Expenses", "bool", "Lock the Expenses tab"),
         ("Locked by PIN", "lock_vendors", "Vendors", "bool", "Lock the Vendors tab"),
+        ("Locked by PIN", "lock_accounts", "Accounts", "bool", "Lock the Accounts tab"),
         ("Advanced", "federal_withholding_pct", "Federal withholding %", "float", None),
         ("Advanced", "state_withholding_pct", "State withholding %", "float", None),
         ("Advanced", "social_security_pct", "Social Security %", "float", None),

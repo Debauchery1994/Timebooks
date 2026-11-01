@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from .. import expenses, phone_upload, receipts_ocr, scanning
+from .. import money
 from .. import vendor_payments as vp
 from ..models import Expense, Trip
 from .common import MONTH_NAMES, FlowFrame, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
@@ -49,8 +50,14 @@ class ExpenseDialog(ModalDialog):
         self.w["vendor"].set(e.vendor)
         self.w["vendor"].bind("<FocusOut>", self._suggest_category)
         self.w["vendor"].bind("<<ComboboxSelected>>", self._suggest_category)
-        self.w["category"] = row(2, "Category", ttk.Combobox(f, values=self.book.categories, width=34))
+        cf = ttk.Frame(f)
+        self.w["category"] = ttk.Combobox(cf, values=self.book.categories, width=26)
+        self.w["category"].pack(side="left")
+        ttk.Button(cf, text="Split\u2026", command=self._split).pack(side="left", padx=(6, 0))
+        row(2, "Category", cf)
         self.w["category"].set(e.category)
+        self.splits: list = list(e.splits)   # [(category, amount)] when split across categories
+        self._show_split()
         self.w["amount"] = row(3, "Amount paid", ttk.Entry(f, width=14))
         self.w["amount"].insert(0, f"{e.amount:.2f}" if e.amount else "")
         self.w["tax"] = row(4, "Tax included", ttk.Entry(f, width=14))
@@ -94,6 +101,33 @@ class ExpenseDialog(ModalDialog):
                                                                              sticky="w", pady=(6, 0))
         return self.w["vendor"] if not e.vendor else self.w["amount"]
 
+    def _show_split(self) -> None:
+        cb = self.w["category"]
+        if self.splits:
+            cb.configure(state="normal")
+            cb.set(f"{expenses.SPLIT} ({len(self.splits)} categories)")
+            cb.configure(state="disabled")
+        else:
+            cb.configure(state="normal")
+            if cb.get().startswith(expenses.SPLIT):
+                cb.set("")
+
+    def _split(self) -> None:
+        try:
+            amount = parse_money(self.w["amount"].get() or "0")
+        except ValueError as exc:
+            messagebox.showwarning("Split", str(exc), parent=self)
+            return
+        if amount <= 0:
+            messagebox.showwarning("Split", "Enter the amount paid first.", parent=self)
+            return
+        first = [] if self.splits else ([(self.w["category"].get().strip(), amount)]
+                                         if self.w["category"].get().strip() else [])
+        r = SplitDialog(self, self.book, amount, self.splits or first).show()
+        if r is not None:
+            self.splits = r
+            self._show_split()
+
     def _suggest_category(self, _e=None) -> None:
         if not self.w["category"].get().strip():
             self.w["category"].set(expenses.last_category_for(self.book.expenses, self.w["vendor"].get()))
@@ -122,6 +156,12 @@ class ExpenseDialog(ModalDialog):
             messagebox.showwarning("Expense", str(exc) or "Check the date, amounts and check number.", parent=self)
             return False
         vendor, category = w["vendor"].get().strip(), w["category"].get().strip()
+        if self.splits:
+            category = expenses.SPLIT
+            if sum((a for _c, a in self.splits), Decimal("0")) != amount:
+                messagebox.showwarning("Expense", "The split parts don't add up to the amount paid any more. Click "
+                                       "Split\u2026 to fix them.", parent=self)
+                return False
         problems = [m for bad, m in ((not vendor, "Enter who was paid (the vendor)."),
                                      (amount <= 0, "Enter the amount paid."),
                                      (tax < 0 or tax > amount, "Tax can't be more than the amount paid."),
@@ -137,6 +177,13 @@ class ExpenseDialog(ModalDialog):
                                    f"{paid.payee}, so its vendor, amount, Paid by and check number stay as the check "
                                    "has them. To change them, void the check on Pay & Checks > Vendor Checks and "
                                    "write a new one.", parent=self)
+            return False
+        paid_from = self.accounts[max(w["account_paid"].current(), 0)][0]
+        done = money.cleared_on(self.book, f"exp:{self.e.expense_id}")
+        if done and (amount, d, paid_from) != (self.e.amount, self.e.expense_date, self.e.account_id):
+            messagebox.showwarning("Expense", f"This expense was reconciled with the {done:%m/%d/%Y} bank statement, "
+                                   "so its amount, date and Paid from stay as they are. To change them, undo that "
+                                   "reconcile on the Accounts tab first.", parent=self)
             return False
         taken = vp.check_number_taken(self.book, check, self.e) if check and method == "Check" else ""
         if taken:
@@ -159,7 +206,81 @@ class ExpenseDialog(ModalDialog):
             vendor_id=self.e.vendor_id, created=self.e.created or datetime.now().isoformat(timespec="seconds"),
             recurring_id=self.e.recurring_id,
             person_id=self.people[max(w["account"].current(), 0)][0] or "",
-            account_id=self.accounts[max(w["account_paid"].current(), 0)][0])
+            account_id=paid_from, splits=list(self.splits))
+        return True
+
+
+class SplitDialog(ModalDialog):
+    """Split one expense across categories: up to 8 parts that add up to the amount paid. result = [(category,
+    amount)], or [] to put it back in one category."""
+
+    ROWS = 8
+
+    def __init__(self, master, book, amount: Decimal, parts: list):
+        self.book, self.amount, self.parts = book, amount, parts
+        super().__init__(master, "Split Expense")
+
+    def body(self, f):
+        ttk.Label(f, text=f"Split {fmt_money(self.amount)} across categories (e.g. parts and supplies on one "
+                  "receipt).", style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        self.rows = []
+        for i in range(self.ROWS):
+            cb = ttk.Combobox(f, values=self.book.categories, width=26)
+            e = ttk.Entry(f, width=12)
+            cb.grid(row=i + 1, column=0, sticky="w", pady=1)
+            e.grid(row=i + 1, column=1, sticky="w", padx=(8, 0), pady=1)
+            if i < len(self.parts):
+                cb.set(self.parts[i][0])
+                e.insert(0, f"{self.parts[i][1]:.2f}")
+            e.bind("<KeyRelease>", lambda _e: self._left())
+            self.rows.append((cb, e))
+        self.v_left = tk.StringVar()
+        ttk.Label(f, textvariable=self.v_left, style="Bold.TLabel").grid(row=self.ROWS + 1, column=0, columnspan=2,
+                                                                         sticky="w", pady=(6, 0))
+        ttk.Button(f, text="Don't split (one category)", command=self._unsplit).grid(
+            row=self.ROWS + 2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._left()
+        return self.rows[0][0]
+
+    def _read(self) -> list[tuple[str, Decimal]] | None:
+        out = []
+        for cb, e in self.rows:
+            cat, txt = cb.get().strip(), e.get().strip()
+            if not cat and not txt:
+                continue
+            try:
+                amt = parse_money(txt or "0")
+            except ValueError:
+                return None
+            if not cat or amt <= 0:
+                return None
+            out.append((cat, amt))
+        return out
+
+    def _left(self) -> None:
+        got = self._read()
+        if got is None:
+            self.v_left.set("Each part needs a category and an amount.")
+            return
+        left = self.amount - sum((a for _c, a in got), Decimal("0"))
+        self.v_left.set("Adds up." if left == 0 else f"Left to split: {fmt_money(left)}" if left > 0
+                        else f"Too much by {fmt_money(-left)}")
+
+    def _unsplit(self) -> None:
+        self.result = []
+        self.destroy()
+
+    def apply(self) -> bool:
+        got = self._read()
+        if got is None or len(got) < 2:
+            messagebox.showwarning("Split Expense", "Enter at least two parts, each with a category and an amount.",
+                                   parent=self)
+            return False
+        if sum((a for _c, a in got), Decimal("0")) != self.amount:
+            messagebox.showwarning("Split Expense", f"The parts must add up to {fmt_money(self.amount)}.",
+                                   parent=self)
+            return False
+        self.result = got
         return True
 
 
@@ -661,8 +782,9 @@ class ExpensesTab(PinLockable, ttk.Frame):
                 result.receipt_file = expenses.refile_receipt(result, self.book.path)
             except OSError as exc:
                 log.warning("Could not move receipt %s: %s", result.receipt_file, exc)
-        if result.category not in self.book.categories:
-            self.book.categories.append(result.category)
+        for cat, _amt in expenses.parts(result):   # a split adds each part's category, never "Split" itself
+            if cat not in self.book.categories:
+                self.book.categories.append(cat)
         repeats = dlg.repeats   # read in apply(): the form's widgets are gone once it closes
         if repeats in expenses.REPEATS and not result.recurring_id:
             rec = expenses.recurring_from(result, repeats, expenses.next_recurring_id(self.book.recurring))
@@ -700,6 +822,12 @@ class ExpensesTab(PinLockable, ttk.Frame):
         if e is None:
             return
         paid = vp.payment_for(self.book, e) if e.check_number else None
+        done = money.cleared_on(self.book, f"exp:{e.expense_id}")
+        if done:
+            messagebox.showinfo("Delete expense", f"{e.vendor} {fmt_money(e.amount)} was reconciled with the "
+                                f"{done:%m/%d/%Y} bank statement. Undo that reconcile on the Accounts tab first.",
+                                parent=self)
+            return
         if paid is not None:
             messagebox.showinfo("Delete expense", f"{e.vendor} {fmt_money(e.amount)} is paid by vendor check "
                                 f"#{paid.check_number}. Void the check on Pay & Checks > Vendor Checks instead: "
