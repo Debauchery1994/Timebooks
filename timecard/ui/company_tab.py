@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import tkinter as tk
+import webbrowser
 from decimal import Decimal
 from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
@@ -16,6 +17,8 @@ from .pin import PinLockable
 
 if TYPE_CHECKING:
     from .app import App
+
+MICR_FONT_URL = "https://www.idautomation.com/micr-fonts/e13b"
 
 
 class CompanyTab(PinLockable, ttk.Frame):
@@ -193,6 +196,11 @@ class CompanyTab(PinLockable, ttk.Frame):
                     self.manual_widgets.append(w)
             if fname == "check_layout":
                 v.trace_add("write", lambda *_: self._update_layout_state())
+            if fname == "micr_font_path":
+                ttk.Button(lf, text="Get an E-13B MICR font (opens IDAutomation's site)", style="Link.TButton",
+                           cursor="hand2", command=lambda: webbrowser.open(MICR_FONT_URL)).grid(
+                    row=r + 1, column=1, sticky="w", pady=(0, 3))
+                rows[section] += 1
             if fname == "account_number":
                 ttk.Checkbutton(lf, text="Show bank numbers", variable=self.v_show,
                                 command=self._toggle_show).grid(row=r + 1, column=1, sticky="w", pady=3)
