@@ -8,9 +8,9 @@ from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from ..models import Company, Employee
-from .. import backup, calc
+from .. import backup, calc, copies
 from ..storage import TimecardBook
-from .common import ModalDialog, documents_dir, open_file
+from .common import ModalDialog, documents_dir, open_file, style_tree
 
 if TYPE_CHECKING:
     from .app import App
@@ -100,6 +100,18 @@ class BackupDialog(ModalDialog):
         ttk.Spinbox(keep, from_=1, to=365, textvariable=self.v_keep, width=5).pack(side="left", padx=6)
         ttk.Label(keep, text="backup copies of each workbook").pack(side="left")
 
+        enc = ttk.Frame(f)
+        enc.pack(anchor="w", pady=(10, 0))
+        self.v_encrypt = tk.BooleanVar(value=bool(s.data.get("backup_encrypt")))
+        ttk.Checkbutton(enc, text="Encrypt backups with a password (recommended for Google Drive and other cloud "
+                        "folders)", variable=self.v_encrypt, command=self._encrypt_toggled).pack(anchor="w")
+        pw = ttk.Frame(enc)
+        pw.pack(anchor="w", pady=(4, 0))
+        ttk.Button(pw, text="Set Backup Password\u2026", command=self._set_password).pack(side="left")
+        self.v_pw = tk.StringVar()
+        ttk.Label(pw, textvariable=self.v_pw, style="Muted.TLabel").pack(side="left", padx=(8, 0))
+        self._refresh_password()
+
         self.v_last = tk.StringVar()
         self._refresh_last()
         ttk.Label(f, textvariable=self.v_last, style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
@@ -110,6 +122,27 @@ class BackupDialog(ModalDialog):
         ttk.Label(f, text="Backups contain pay rates and addresses. Keep the backup folder private.",
                   style="Muted.TLabel").pack(anchor="w", pady=(10, 0))
         return entry
+
+    def _refresh_password(self) -> None:
+        if self.app.saved_backup_key() is not None:
+            self.v_pw.set("Password saved on this computer.")
+        elif self.app.settings.data.get("backup_key"):
+            self.v_pw.set("Enter the backup password again on this computer.")
+        else:
+            self.v_pw.set("No backup password set yet.")
+
+    def _set_password(self) -> bool:
+        pw = BackupPasswordDialog(self).show()
+        if not pw:
+            return False
+        self.app.set_backup_password(pw)
+        self.v_encrypt.set(True)
+        self._refresh_password()
+        return True
+
+    def _encrypt_toggled(self) -> None:
+        if self.v_encrypt.get() and self.app.saved_backup_key() is None and not self._set_password():
+            self.v_encrypt.set(False)
 
     def _refresh_last(self) -> None:
         last = self.app.settings.data.get("last_backup")
@@ -145,6 +178,7 @@ class BackupDialog(ModalDialog):
         s.backup_dir = d
         s.data["backup_on_save"] = bool(self.v_on_save.get()) and bool(d)
         s.data["backup_keep"] = keep
+        s.data["backup_encrypt"] = bool(self.v_encrypt.get())
         s.save()
         return True
 
@@ -166,6 +200,144 @@ class BackupDialog(ModalDialog):
 
     def apply(self) -> bool:
         return self._store()
+
+
+class BackupPasswordDialog(ModalDialog):
+    """Choose the backup password (typed twice). result = the password."""
+
+    MIN_LEN = 8
+
+    def __init__(self, master):
+        super().__init__(master, "Backup Password")
+
+    def body(self, f):
+        ttk.Label(f, text="Backups are encrypted with this password before they go to the backup folder.\n"
+                  "Write it down somewhere safe: if it's lost, nobody can open the encrypted backups,\n"
+                  "not even TimeBooks. It's saved on this computer (protected by Windows) so backups\n"
+                  "happen without asking; restoring on another computer asks for it.",
+                  style="Muted.TLabel", justify="left").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        self.e1, self.e2 = ttk.Entry(f, show="\u2022", width=28), ttk.Entry(f, show="\u2022", width=28)
+        for r, (label, e) in enumerate((("Backup password", self.e1), ("Type it again", self.e2)), start=1):
+            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=3, padx=(0, 10))
+            e.grid(row=r, column=1, sticky="w", pady=3)
+        ttk.Label(f, text="Changing it later: older backups still open with the password they were made with.",
+                  style="Muted.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        return self.e1
+
+    def apply(self) -> bool:
+        a, b = self.e1.get(), self.e2.get()
+        if len(a) < self.MIN_LEN:
+            messagebox.showwarning("Backup Password", f"Use at least {self.MIN_LEN} characters.", parent=self)
+            return False
+        if a != b:
+            messagebox.showwarning("Backup Password", "The two entries don't match.", parent=self)
+            return False
+        self.result = a
+        return True
+
+
+class RestoreDialog(ModalDialog):
+    """Pick a backup to restore: the backups in the backup folder (newest first) or any backup file.
+    result = the chosen file's path."""
+
+    def __init__(self, master, app: "App"):
+        self.app = app
+        self.chosen: Path | None = None
+        super().__init__(master, "Restore from Backup")
+
+    def body(self, f):
+        ttk.Label(f, text="Choose the backup to bring back. You'll see what's in it before anything changes, and "
+                  "the workbook it replaces is kept as a backup first.", style="Muted.TLabel",
+                  wraplength=560).grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(f, text="Backup folder").grid(row=1, column=0, sticky="w", pady=(8, 2))
+        self.v_dir = tk.StringVar(value=self.app.settings.backup_dir)
+        ttk.Entry(f, textvariable=self.v_dir, width=48).grid(row=1, column=1, sticky="ew", pady=(8, 2))
+        ttk.Button(f, text="Browse\u2026", command=self._browse).grid(row=1, column=2, padx=(6, 0), pady=(8, 2))
+        cols = (("when", "Backed up", 150), ("book", "Workbook", 250), ("kind", "", 90))
+        self.tree = ttk.Treeview(f, columns=[c[0] for c in cols], show="headings", height=10, selectmode="browse")
+        for c, h, w in cols:
+            self.tree.heading(c, text=h)
+            self.tree.column(c, width=w, anchor="w")
+        style_tree(self.tree)
+        self.tree.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(6, 4))
+        self.tree.bind("<Double-1>", lambda e: self.ok())
+        ttk.Button(f, text="Choose another backup file\u2026", command=self._pick_file).grid(
+            row=3, column=0, columnspan=3, sticky="w")
+        self._fill()
+        return self.tree
+
+    def _browse(self) -> None:
+        d = filedialog.askdirectory(parent=self, title="Folder the backups were made to",
+                                    initialdir=self.v_dir.get() or str(Path.home()))
+        if d:
+            self.v_dir.set(str(Path(d)))
+            self._fill()
+
+    def _fill(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        d = self.v_dir.get().strip()
+        found = backup.all_backups(d) if d and Path(d).is_dir() else []
+        mine = self.app.book.path.stem if self.app.book is not None and self.app.book.path else ""
+        found.sort(key=lambda p: backup.backup_stem(p) != mine)   # this workbook's first, each newest first
+        for p in found:
+            stamp = p.stem[-17:]
+            when = f"{stamp[5:7]}/{stamp[8:10]}/{stamp[:4]} {stamp[11:13]}:{stamp[13:15]}"
+            self.tree.insert("", "end", iid=str(p), values=(when, backup.backup_stem(p),
+                                                           "Encrypted" if p.suffix == backup.ENCRYPTED_SUFFIX else ""))
+        kids = self.tree.get_children()
+        if kids:
+            self.tree.selection_set(kids[0])
+
+    def _pick_file(self) -> None:
+        p = filedialog.askopenfilename(parent=self, title="Choose a backup",
+                                       initialdir=self.v_dir.get() or str(Path.home()),
+                                       filetypes=[("TimeBooks backups", "*.tbk *.xlsx"), ("All files", "*.*")])
+        if p:
+            self.chosen = Path(p)
+            self.ok()
+
+    def apply(self) -> bool:
+        if self.chosen is None:
+            sel = self.tree.selection()
+            if not sel:
+                messagebox.showinfo("Restore from Backup", "Choose a backup first.", parent=self)
+                return False
+            self.chosen = Path(sel[0])
+        self.result = self.chosen
+        return True
+
+
+class OtherCopyDialog(ModalDialog):
+    """Another copy of the open workbook (PC or USB) has work this one doesn't. result = "open" | "copy" | "keep"."""
+
+    def __init__(self, master, this: Path, other: "copies.OtherCopy"):
+        self.this, self.other = this, other
+        super().__init__(master, "Another copy of this workbook")
+
+    def body(self, f):
+        o = self.other
+        when = f"saved {o.saved_at}" + (f" on {o.saved_on}" if o.saved_on else "")
+        if o.status == "other_newer":
+            msg = (f"The copy at\n    {o.path}\nhas newer work than the one you opened ({when}).\n\n"
+                   "Work saved there isn't in this copy.")
+        else:
+            msg = (f"This workbook and the copy at\n    {o.path}\nwere both changed separately since they were last "
+                   f"the same (that one {when}).\n\nTimeBooks can't combine them: each has work the other doesn't. "
+                   "Open the other one to compare, and keep working in one of them.")
+        ttk.Label(f, text=msg, justify="left", wraplength=520).pack(anchor="w")
+        self.v = tk.StringVar(value="open")
+        choices = [("open", "Open that copy instead")]
+        if o.status == "other_newer":
+            choices.append(("copy", "Copy it over this one, so both match (this file is backed up first)"))
+        choices.append(("keep", "Keep using this one"))
+        for val, text in choices:
+            ttk.Radiobutton(f, text=text, value=val, variable=self.v).pack(anchor="w", pady=(6 if val == "open"
+                                                                                           else 2, 0))
+        return None
+
+    def apply(self) -> bool:
+        self.result = self.v.get()
+        return True
 
 
 class ExportStatementsDialog(ModalDialog):

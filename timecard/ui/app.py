@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,11 +16,12 @@ import webbrowser
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from ..models import Company
 from .. import (
-    APP_NAME, __version__, advances, backup, branding, calc, paths, phone_upload, security, timeclock, updates,
+    APP_NAME, __version__, advances, backup, branding, calc, copies, paths, phone_upload, security, timeclock,
+    updates,
 )
 from ..storage import TimecardBook, WorkbookError
 from .common import (
@@ -32,7 +34,7 @@ from .common import (
 from .company_tab import CompanyTab
 from .expenses_tab import ExpensesTab
 from .vendors_tab import VendorsTab
-from .dialogs import NewYearDialog, StartPositionDialog
+from .dialogs import BackupDialog, NewYearDialog, OtherCopyDialog, RestoreDialog, StartPositionDialog
 from .employees_tab import EmployeesTab
 from .payroll_tab import PayrollTab
 from .pin import ChangePinDialog, IDLE_LOCK_SECONDS, SecurityQuestionDialog
@@ -237,6 +239,9 @@ class App(tk.Tk):
         self.v_autosave = tk.BooleanVar(value=bool(self.settings.data.get("autosave", True)))
         fm.add_checkbutton(label="Save automatically", variable=self.v_autosave, command=self._toggle_autosave)
         fm.add_separator()
+        fm.add_command(label="Backup\u2026", command=self.open_backup)
+        fm.add_command(label="Restore from Backup\u2026", command=self.restore_backup)
+        fm.add_separator()
         fm.add_command(label="Open in GridCraft", command=self.open_in_gridcraft)
         fm.add_command(label="Open Output Folder", command=self.open_output_folder)
         fm.add_separator()
@@ -432,13 +437,47 @@ class App(tk.Tk):
         if self._snapshot_taken or self.book is None or self.book.path is None:
             return
         self._snapshot_taken = True
-        dest = self.settings.backup_dir if self.settings.backup_dir and Path(self.settings.backup_dir).is_dir() \
-            else str(Path(self.book.path).parent)
+        dest, key = self.safety_copy_target(Path(self.book.path))
         try:
-            backup.backup_workbook(self.book.path, dest, keep=int(self.settings.data.get("backup_keep")
-                                                                  or backup.DEFAULT_KEEP))
+            backup.backup_workbook(self.book.path, dest, keep=self.backup_keep(), key=key)
         except OSError as exc:   # includes FileNotFoundError for a workbook not on disk yet
             log.warning("Could not copy the workbook before autosaving: %s", exc)
+
+    # ----- backups: where safety copies go, and the backup password (encrypted backups, 1.5)
+    def backup_keep(self) -> int:
+        return int(self.settings.data.get("backup_keep") or backup.DEFAULT_KEEP)
+
+    def backup_key(self) -> backup.BackupKey | None:
+        """The backup key when backups are encrypted (None if they aren't, or it isn't saved on this computer)."""
+        return self.saved_backup_key() if self.settings.data.get("backup_encrypt") else None
+
+    def saved_backup_key(self) -> backup.BackupKey | None:
+        """The backup key saved on this computer, if any (Windows only lets the user who saved it read it back)."""
+        saved = self.settings.data.get("backup_key") or {}
+        if not saved:
+            return None
+        try:
+            return backup.BackupKey(bytes.fromhex(saved["salt"]), security.unprotect(bytes.fromhex(saved["blob"])))
+        except (OSError, KeyError, ValueError, TypeError):
+            return None
+
+    def set_backup_password(self, password: str) -> None:
+        k = backup.make_key(password)
+        self.settings.data["backup_key"] = {"salt": k.salt.hex(), "blob": security.protect(k.key).hex()}
+        self.settings.data["backup_encrypt"] = True
+        self.settings.save()
+
+    def safety_copy_target(self, workbook: Path) -> tuple[str, backup.BackupKey | None]:
+        """Where to keep a copy before something replaces the workbook: the backup folder (encrypted when backups
+        are), else a backup folder next to the workbook. Never an unencrypted copy in an encrypted backup folder."""
+        d = self.settings.backup_dir
+        if d and Path(d).is_dir():
+            if not self.settings.data.get("backup_encrypt"):
+                return d, None
+            key = self.backup_key()
+            if key is not None:
+                return d, key
+        return str(workbook.parent), None
 
     def _backup_after_autosaves(self) -> None:
         """Auto-saves skip the backup copy (it would fill the backup folder); make one when leaving the book."""
@@ -711,12 +750,132 @@ class App(tk.Tk):
         self.set_book(book)
         self.status(f"Opened {Path(path).name}")
         log.info("Opened %s", path)
+        if self._check_other_copies(book):
+            return True
         if book.from_newer_app:
             log.warning("Opened a workbook from a newer version (schema %s, saved by %s)",
                         book.schema_version, book.saved_by or "?")
             self.status("Saved by a newer version of TimeBooks: changes here can't be saved over it.", error=True)
             messagebox.showwarning(APP_NAME, book.newer_message() + "\n\nUntil then, anything you change here can "
                                    "only be kept with File > Save As (a separate copy).", parent=self)
+        return True
+
+    def _check_other_copies(self, book: TimecardBook) -> bool:
+        """After opening: if the PC or USB copy of this workbook has work this one doesn't, say so and offer to open
+        it or copy it over this one. True if another workbook was opened instead."""
+        try:
+            found = copies.other_copies(book.path, book.company)
+        except OSError as exc:
+            log.warning("Could not look for other copies of %s: %s", book.path, exc)
+            return False
+        ahead = [c for c in found if c.status in ("other_newer", "split")]
+        if not ahead:
+            if found:   # only older copies elsewhere: just mention it
+                self.status(f"Opened {book.path.name}. The copy at {found[0].path.parent} is older than this one.")
+            return False
+        other = ahead[0]
+        log.info("Other copy %s: %s", other.path, other.status)
+        choice = OtherCopyDialog(self, book.path, other).show()
+        if choice == "open":
+            return self.open_path(other.path, confirmed=True)
+        if choice == "copy":
+            return self._copy_over(other.path, book.path)
+        return False
+
+    def _copy_over(self, newer: Path, target: Path) -> bool:
+        """Replace `target` with the newer copy `newer` (target is backed up first) and open it."""
+        dest, key = self.safety_copy_target(target)
+        try:
+            kept = backup.backup_workbook(target, dest, keep=self.backup_keep(), key=key)
+            tmp = target.with_name(f".~{target.stem}-copy.xlsx")
+            shutil.copy2(newer, tmp)
+            os.replace(tmp, target)
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, f"The newer copy couldn't be copied here:\n{exc}", parent=self)
+            return False
+        log.info("Copied %s over %s (kept %s)", newer, target, kept)
+        self.book = None   # the open book was this file's old contents: nothing to save
+        ok = self.open_path(target, confirmed=True)
+        self.status(f"Copied the newer workbook here. The old one is kept in {kept.parent}.")
+        return ok
+
+    def open_backup(self) -> None:
+        BackupDialog(self, self).show()
+
+    def restore_backup(self) -> None:
+        self.commit_pending()
+        src = RestoreDialog(self, self).show()
+        if src is not None:
+            self.restore_from(Path(src))
+
+    def restore_from(self, src: Path) -> bool:
+        """Bring back a backup: decrypt it if needed (asking for the backup password), check it opens, show what's in
+        it, keep the workbook it replaces as a backup, then open it and bring back any missing receipts."""
+        key, password = self.saved_backup_key(), ""
+        while True:
+            try:
+                data = backup.restore_bytes(src, password, key)
+                break
+            except backup.BackupPasswordError as exc:
+                password = simpledialog.askstring("Restore from Backup", f"{exc}\n\nBackup password:", show="\u2022",
+                                                  parent=self)
+                if not password:
+                    return False
+            except OSError as exc:
+                messagebox.showerror("Restore from Backup", f"The backup couldn't be read:\n{exc}", parent=self)
+                return False
+        with tempfile.TemporaryDirectory() as tmp:
+            probe = Path(tmp) / "backup.xlsx"
+            probe.write_bytes(data)
+            try:
+                found = TimecardBook.load(probe)
+            except WorkbookError as exc:
+                messagebox.showerror("Restore from Backup", f"That backup isn't a workbook TimeBooks can open:\n{exc}",
+                                     parent=self)
+                return False
+        stem = backup.backup_stem(src)
+        target = self.book.path if self.book is not None and self.book.path and self.book.path.stem == stem else None
+        if target is None:
+            picked = filedialog.asksaveasfilename(parent=self, title="Restore the backup as", defaultextension=".xlsx",
+                                                  initialdir=str(documents_dir()), initialfile=f"{stem}.xlsx",
+                                                  filetypes=[("Excel workbooks", "*.xlsx")])
+            if not picked:
+                return False
+            target = Path(picked)
+        c = found.company
+        saved = f"Last saved {c.last_saved_at}" + (f" on {c.last_saved_on}" if c.last_saved_on else "") \
+            if c.last_saved_at else ""
+        summary = (f"{c.company_name or '(no company name)'}, {c.year}\n{saved}\n"
+                   f"{len(found.employees)} people, {len(found.payroll)} checks, {len(found.expenses)} expenses")
+        replace = (f"It replaces {target.name}; the current file is kept as a backup first." if target.exists()
+                   else f"It will be saved as {target}.")
+        if not messagebox.askyesno("Restore from Backup", f"Restore this backup?\n\n{summary}\n\n{replace}",
+                                   parent=self):
+            return False
+        if target == (self.book.path if self.book is not None else None):
+            self._autosave_paused = True   # don't let a pending automatic save write the old book back
+        elif not self.confirm_discard():
+            return False
+        kept = None
+        try:
+            if target.exists():
+                dest, k = self.safety_copy_target(target)
+                kept = backup.backup_workbook(target, dest, keep=self.backup_keep(), key=k)
+            tmp = target.with_name(f".~{target.stem}-restore.xlsx")
+            tmp.write_bytes(data)
+            os.replace(tmp, target)
+        except OSError as exc:
+            messagebox.showerror("Restore from Backup", f"The backup couldn't be put in place:\n{exc}", parent=self)
+            return False
+        log.info("Restored %s to %s (kept %s)", src, target, kept)
+        self.book = None   # what was open is now the kept copy
+        if not self.open_path(target, confirmed=True):
+            return False
+        copied, failed = backup.restore_receipts(src.parent.parent, stem, target, password, key)
+        note = f" {copied} receipt file(s) brought back." if copied else ""
+        note += f" {failed} receipt(s) couldn't be opened." if failed else ""
+        self.status(f"Restored {src.name}." + note
+                    + (f" The replaced workbook is kept in {kept.parent}." if kept else ""))
         return True
 
     def new_year_workbook(self) -> None:
@@ -757,7 +916,8 @@ class App(tk.Tk):
     def build_new_book(res: dict, carry_from: TimecardBook | None = None) -> TimecardBook:
         if carry_from is not None:
             company = dataclasses.replace(carry_from.company, company_name=res["name"], year=res["year"],
-                                          pay_period=res["pay_period"], week_start=res["week_start"])
+                                          pay_period=res["pay_period"], week_start=res["week_start"],
+                                          workbook_id="", save_ids="", last_saved_on="", last_saved_at="")
         else:
             company = Company(company_name=res["name"], year=res["year"], pay_period=res["pay_period"],
                               week_start=res["week_start"])
@@ -817,9 +977,16 @@ class App(tk.Tk):
             if not quiet:
                 messagebox.showinfo("Backup", "Choose a backup folder first.", parent=self)
             return None
+        key = self.backup_key()
+        if self.settings.data.get("backup_encrypt") and key is None:
+            msg = ("Backup skipped: backups are encrypted, but the backup password isn't saved on this computer. "
+                   "Enter it in File > Backup.")
+            self.status(msg, error=True)
+            if not quiet:
+                messagebox.showwarning("Backup", msg, parent=self)
+            return None
         try:
-            copy = backup.backup_workbook(self.book.path, dest, int(self.settings.data.get("backup_keep")
-                                                                    or backup.DEFAULT_KEEP))
+            copy = backup.backup_workbook(self.book.path, dest, self.backup_keep(), key=key)
         except OSError as exc:
             log.warning("Backup failed: %s", exc)
             msg = (f"Backup skipped: {dest} is not available. Is Google Drive (or the backup drive) connected?"
@@ -829,7 +996,7 @@ class App(tk.Tk):
                 messagebox.showwarning("Backup", msg, parent=self)
             return None
         try:
-            backup.backup_receipts(self.book.path, dest)   # receipt files live next to the workbook, not in it
+            backup.backup_receipts(self.book.path, dest, key)   # receipt files live next to the workbook, not in it
         except OSError as exc:
             log.warning("Receipt backup incomplete: %s", exc)
         self.settings.data["last_backup"] = datetime.now().strftime("%Y-%m-%d %I:%M %p")

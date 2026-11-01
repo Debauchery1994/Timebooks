@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
-from . import __version__, branding, calc
+from . import __version__, branding, calc, copies
 from . import expenses as expenses_mod
 from .models import (
     Account, Advance, Company, Employee, Expense, PayrollRecord, Recurring, TimeEntry, Trip, Vendor, VendorPayment,
@@ -570,7 +570,15 @@ class TimecardBook:
         target = target.resolve()
         if self.from_newer_app and self.path is not None and target == Path(self.path).resolve():
             raise WorkbookError(self.newer_message())
-        wb = self._build_workbook()
+        before = (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
+                  self.company.last_saved_at)
+        copies.stamp_save(self.company)   # so a PC copy and a USB copy can tell which has the newer work
+        try:
+            wb = self._build_workbook()
+        except Exception:
+            (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
+             self.company.last_saved_at) = before
+            raise
         tmp_name: str | None = None
         try:
             fd, tmp_name = tempfile.mkstemp(prefix=f".~{target.stem}-", suffix=".xlsx",
@@ -580,8 +588,12 @@ class TimecardBook:
             os.replace(tmp_name, target)
             tmp_name = None
         except PermissionError as exc:
+            (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
+             self.company.last_saved_at) = before
             raise WorkbookError(LOCKED_MSG) from exc
         except OSError as exc:
+            (self.company.workbook_id, self.company.save_ids, self.company.last_saved_on,
+             self.company.last_saved_at) = before
             raise WorkbookError(f"Could not save {target.name}: {exc}") from exc
         finally:
             if tmp_name and os.path.exists(tmp_name):

@@ -84,6 +84,12 @@ class Company:
     # Faded picture behind the check face, blank stock only (the picture is stored with the logo,
     # TimecardBook.check_background). How strongly it shows, in percent: low keeps the writing easy to read.
     check_background_fade: int = 18
+    # Which copy of the workbook this is (1.5), written on every save so a PC copy and a USB copy can be compared:
+    # the workbook's own id, the ids of its last saves (newest first), and where / when it was last saved.
+    workbook_id: str = ""
+    save_ids: str = ""
+    last_saved_on: str = ""
+    last_saved_at: str = ""
 
 
 @dataclass

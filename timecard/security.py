@@ -176,3 +176,38 @@ def reset_pin_with_answer(answer: str, new_pin: str) -> None:
     data.update(answer_failures=0, answer_locked_until=0)
     _save(data)
     set_pin(new_pin)
+
+
+# ---- Windows data protection (DPAPI): keep a secret on this computer, readable only by this Windows user
+
+def protect(data: bytes) -> bytes:
+    """Encrypt `data` so only the current Windows user on this computer can read it back (CryptProtectData).
+    Raises OSError where that isn't available."""
+    return _dpapi(data, protect=True)
+
+
+def unprotect(blob: bytes) -> bytes:
+    """Undo protect(). Raises OSError if it can't be read here (another computer or Windows user)."""
+    return _dpapi(blob, protect=False)
+
+
+def _dpapi(data: bytes, protect: bool) -> bytes:
+    import sys
+    if sys.platform != "win32":
+        raise OSError("Windows data protection is only on Windows.")
+    import ctypes
+    from ctypes import wintypes
+
+    class Blob(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buf = ctypes.create_string_buffer(data, len(data))
+    src, out = Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))), Blob()
+    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    fn = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(src), None, None, None, None, 0x1, ctypes.byref(out)):   # 0x1 = no UI
+        raise OSError("Windows couldn't " + ("protect" if protect else "read") + " the saved backup password.")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        kernel32.LocalFree(out.pbData)
