@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from .. import vendor_payments as vp
 from .common import fmt_money, open_file, style_tree
-from .vendors_tab import AccountsDialog, PayBillsDialog
+from .vendors_tab import AccountsDialog, NewVendorDialog, PayBillsDialog, add_vendor
 
 if TYPE_CHECKING:
     from .app import App
@@ -23,7 +23,8 @@ class VendorChecksPanel(ttk.Frame):
         top.pack(fill="x")
         ttk.Label(top, text="Vendor").pack(side="left")
         self.cb_vendor = ttk.Combobox(top, state="readonly", width=30)
-        self.cb_vendor.pack(side="left", padx=(6, 6))
+        self.cb_vendor.pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="New vendor…", command=self.new_vendor).pack(side="left", padx=(4, 6))
         ttk.Button(top, text="Pay Bills…", style="Accent.TButton", command=self.pay).pack(side="left")
         for text, cmd in (("Print Checks…", self.print_checks), ("Void Check…", self.void_check),
                           ("Check Register…", self.print_register), ("Accounts…", self.open_accounts)):
@@ -36,8 +37,9 @@ class VendorChecksPanel(ttk.Frame):
             self.tree.column(c, width=w, anchor="e" if c == "amount" else "w")
         style_tree(self.tree)
         self.tree.pack(fill="both", expand=True, pady=(8, 0))
-        ttk.Label(self, text="Vendor checks share the check numbers with payroll checks. Add vendors and assign "
-                  "unknown vendors on the Vendors tab. Printing uses the check layout in Company Settings > Checks.",
+        ttk.Label(self, text="Vendor checks share the check numbers with payroll checks, and every one is on the "
+                  "Expenses tab (as the bills it pays, or as its own expense). Edit vendors and assign unknown "
+                  "vendors on the Vendors tab. Printing uses the check layout in Company Settings > Checks.",
                   style="Muted.TLabel", wraplength=860).pack(anchor="w", pady=(6, 0))
         self.vendor_ids: list[str] = []
 
@@ -69,13 +71,25 @@ class VendorChecksPanel(ttk.Frame):
             if self.tree.exists(iid):
                 self.tree.selection_add(iid)
 
+    def new_vendor(self) -> None:
+        if self.book is None or self.locked:
+            return
+        vals = NewVendorDialog(self, self.book).show()
+        if vals is None:
+            return
+        v = add_vendor(self.app, vals)
+        self.app.vendors_tab.refresh()
+        self.app.expenses_tab.refresh()
+        self.refresh()
+        self.cb_vendor.current(self.vendor_ids.index(v.vendor_id))
+
     def pay(self) -> None:
         if self.book is None or self.locked:
             return
         i = self.cb_vendor.current()
         v = self.book.vendors.get(self.vendor_ids[i]) if 0 <= i < len(self.vendor_ids) else None
         if v is None:
-            messagebox.showinfo("Pay Bills", "Choose the vendor first (add vendors on the Vendors tab).", parent=self)
+            messagebox.showinfo("Pay Bills", "Choose the vendor first (or add one with New vendor…).", parent=self)
             return
         r = PayBillsDialog(self, self.book, v).show()
         if r is None:

@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from .. import expenses, phone_upload, receipts_ocr, scanning
+from .. import vendor_payments as vp
 from ..models import Expense, Trip
 from .common import MONTH_NAMES, FlowFrame, ModalDialog, fmt_money, log, open_file, parse_date, parse_money, style_tree
 from .bank_dialog import BankImportDialog
@@ -127,6 +128,20 @@ class ExpenseDialog(ModalDialog):
                                      (not category, "Choose a category.")) if bad]
         if problems:
             messagebox.showwarning("Expense", "\n".join(problems), parent=self)
+            return False
+        method = w["method"].get()
+        paid = vp.payment_for(self.book, self.e) if self.e.check_number else None
+        if paid is not None and (amount, method, check, vendor) != (self.e.amount, "Check", self.e.check_number,
+                                                                     self.e.vendor):
+            messagebox.showwarning("Expense", f"This expense is paid by vendor check #{paid.check_number} to "
+                                   f"{paid.payee}, so its vendor, amount, Paid by and check number stay as the check "
+                                   "has them. To change them, void the check on Pay & Checks > Vendor Checks and "
+                                   "write a new one.", parent=self)
+            return False
+        taken = vp.check_number_taken(self.book, check, self.e) if check and method == "Check" else ""
+        if taken:
+            messagebox.showwarning("Expense", f"Check #{check} is already {taken}. Check the number on the "
+                                   "check stub.", parent=self)
             return False
         self.repeats = w["repeats"].get()
         probe = Expense(self.e.expense_id, d, vendor=vendor, amount=amount)
@@ -683,6 +698,12 @@ class ExpensesTab(PinLockable, ttk.Frame):
     def delete(self) -> None:
         e = self._selected() if not self.locked else None
         if e is None:
+            return
+        paid = vp.payment_for(self.book, e) if e.check_number else None
+        if paid is not None:
+            messagebox.showinfo("Delete expense", f"{e.vendor} {fmt_money(e.amount)} is paid by vendor check "
+                                f"#{paid.check_number}. Void the check on Pay & Checks > Vendor Checks instead: "
+                                "that takes it off (or marks the bill unpaid again).", parent=self)
             return
         if not messagebox.askyesno("Delete expense", f"Delete {e.vendor} {fmt_money(e.amount)} on "
                                    f"{e.expense_date:%m/%d/%Y}?\n\nIts receipt file is kept in the Receipts folder.",

@@ -109,6 +109,38 @@ class ReviewFixTests(unittest.TestCase):
         self.assertEqual(vp.next_check_number(b), p.check_number + 1)
 
 
+class ChecksInExpensesTests(unittest.TestCase):
+    def test_every_vendor_check_is_in_expenses_once(self) -> None:
+        b = _book()
+        bill = Expense("X0001", date(2026, 10, 2), vendor="Ace Hardware", amount=D("50"), payment_method="Check")
+        b.expenses.append(bill)
+        paid = vp.record_payment(b, b.vendors["V0001"], D("50"), date(2026, 10, 5), bills=[bill])
+        own = vp.record_payment(b, b.vendors["V0001"], D("20"), date(2026, 10, 6))
+        live = [e for e in b.expenses if e.status != "Draft"]
+        self.assertEqual(sum((e.amount for e in live), D("0")), D("70"))     # the bill once, plus the check's own
+        self.assertIs(vp.payment_for(b, bill), paid)
+        made = next(e for e in b.expenses if e.check_number == own.check_number)
+        self.assertIs(vp.payment_for(b, made), own)
+        vp.void_payment(b, paid)
+        self.assertIsNone(vp.payment_for(b, bill))
+
+    def test_hand_written_check_numbers_are_kept(self) -> None:
+        b = _book()
+        b.expenses.append(Expense("X0001", date(2026, 10, 2), vendor="Napa", amount=D("30"), payment_method="Check",
+                                  check_number=1001))
+        b.expenses.append(Expense("X0002", date(2026, 10, 2), vendor="Napa", amount=D("12"), payment_method="Check",
+                                  check_number=1001))
+        p = vp.record_payment(b, b.vendors["V0001"], D("10"), date(2026, 10, 5))
+        self.assertEqual(p.check_number, 1002)                     # 1001 was written by hand
+        reg = {c.check_number: c for c in vendors.issued_checks(b)}
+        self.assertEqual((reg[1001].kind, reg[1001].amount), ("By hand", D("42")))
+        probe = Expense("X0009", date(2026, 10, 7), payment_method="Check")
+        self.assertIn("Ace Hardware", vp.check_number_taken(b, 1002, probe))
+        self.assertEqual(vp.check_number_taken(b, 1001, probe), "")   # another bill on the same hand check is fine
+        made = next(e for e in b.expenses if e.check_number == 1002)
+        self.assertEqual(vp.check_number_taken(b, 1002, made), "")    # its own check
+
+
 class AccountAnd1099Tests(unittest.TestCase):
     def test_account_totals_dont_count_a_check_twice(self) -> None:
         b = _book(checks_account_id="A01")

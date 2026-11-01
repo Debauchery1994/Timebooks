@@ -18,6 +18,65 @@ if TYPE_CHECKING:
     from .app import App
 
 
+def _category_known(book, cat: str) -> None:
+    if cat and cat not in book.categories:
+        book.categories.append(cat)
+
+
+def add_vendor(app: "App", vals: dict) -> Vendor:
+    """Add a vendor (the name is already checked as new) and link same-name expenses to it."""
+    book = app.book
+    vid = vendors.next_vendor_id(book.vendors)
+    book.vendors[vid] = v = Vendor(vid, **vals)
+    linked = vendors.link_same_name(book, v)
+    _category_known(book, v.default_category)
+    app.mark_dirty()
+    app.status(f"Added {v.name}" + (f"; {linked} expense(s) linked to it" if linked else "") + "."
+               + app.save_hint())
+    return v
+
+
+class NewVendorDialog(ModalDialog):
+    """Add a vendor without leaving the page you're on (Vendor Checks). result = the fields for Vendor (built in
+    apply); the rest (email, notes, W-9) is on the Vendors tab."""
+
+    def __init__(self, master, book):
+        self.book = book
+        super().__init__(master, "New Vendor")
+
+    def body(self, f):
+        self.w: dict = {}
+        for r, (key, label) in enumerate((("name", "Name"), ("address1", "Address line 1"),
+                                          ("address2", "City, State ZIP"), ("phone", "Phone"))):
+            ttk.Label(f, text=label).grid(row=r, column=0, sticky="w", pady=2, padx=(0, 8))
+            self.w[key] = ttk.Entry(f, width=32)
+            self.w[key].grid(row=r, column=1, sticky="w", pady=2)
+        ttk.Label(f, text="Default category").grid(row=4, column=0, sticky="w", pady=2, padx=(0, 8))
+        self.cb_cat = ttk.Combobox(f, values=self.book.categories, width=30)
+        self.cb_cat.grid(row=4, column=1, sticky="w", pady=2)
+        self.v_1099 = tk.BooleanVar()
+        ttk.Checkbutton(f, text="Send a 1099 (services)", variable=self.v_1099).grid(row=5, column=1, sticky="w")
+        ttk.Label(f, text="Email, notes and W-9 can be added later on the Vendors tab.", style="Muted.TLabel",
+                  wraplength=360).grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        return self.w["name"]
+
+    def apply(self) -> bool:
+        name = self.w["name"].get().strip()
+        if not name:
+            messagebox.showwarning("New Vendor", "Enter the vendor's name.", parent=self)
+            return False
+        same = vendors.find_vendor(self.book.vendors, name)
+        if same is not None:
+            messagebox.showwarning("New Vendor", f"{same.name} is already on the list"
+                                   + ("" if same.active else " (marked no longer used; turn it back on on the "
+                                      "Vendors tab)") + ".", parent=self)
+            return False
+        self.result = dict(name=name, address1=self.w["address1"].get().strip(),
+                           address2=self.w["address2"].get().strip(), phone=self.w["phone"].get().strip(),
+                           default_category=self.cb_cat.get().strip(), is_1099=bool(self.v_1099.get()))
+        return True
+
+
 class AccountsDialog(ModalDialog):
     """Name the bank accounts, cards and cash money is paid from; choose which account checks are written from; see
     money out per account this year. Changes are kept on the book directly (it's a list editor)."""
@@ -190,6 +249,12 @@ class PayBillsDialog(ModalDialog):
         if bills and sum((b.amount for b in bills), Decimal("0")) != amount:
             messagebox.showwarning("Pay Bills", "The amount must equal the bills ticked.", parent=self)
             return False
+        if self.bills and not bills and not messagebox.askyesno(
+                "Pay Bills", f"{self.vendor.name} has {len(self.bills)} unpaid bill(s), and this check doesn't pay "
+                "any of them, so it's added to Expenses as an expense of its own.\n\nIf it pays a bill, choose No "
+                "and double-click that bill instead (so it isn't counted twice).\n\nWrite it as its own expense?",
+                parent=self):
+            return False
         self.result = dict(amount=amount, check_date=d, memo=self.e_memo.get().strip(), bills=bills,
                            account_id=self.accounts[max(self.cb_acct.current(), 0)][0],
                            category=self.cb_cat.get().strip())
@@ -301,14 +366,9 @@ class VendorsTab(PinLockable, ttk.Frame):
         if same is not None:
             messagebox.showwarning("Vendors", f"{same.name} is already on the list.", parent=self)
             return
-        vid = vendors.next_vendor_id(self.book.vendors)
-        self.book.vendors[vid] = v = Vendor(vid, **vals)
-        linked = vendors.link_same_name(self.book, v)
-        self._category_known(v.default_category)
-        self.app.mark_dirty()
-        self.selected = vid
+        v = add_vendor(self.app, vals)
+        self.selected = v.vendor_id
         self.refresh()
-        self.app.status(f"Added {v.name}" + (f"; {linked} expense(s) linked to it" if linked else "") + ".")
 
     def save(self) -> None:
         v = self.book.vendors.get(self.selected or "") if self.book and not self.locked else None
@@ -338,8 +398,7 @@ class VendorsTab(PinLockable, ttk.Frame):
         self.app.status(f"Saved {v.name}.{self.app.save_hint()}")
 
     def _category_known(self, cat: str) -> None:
-        if cat and cat not in self.book.categories:
-            self.book.categories.append(cat)
+        _category_known(self.book, cat)
 
     def toggle_active(self) -> None:
         v = self.book.vendors.get(self.selected or "") if self.book and not self.locked else None

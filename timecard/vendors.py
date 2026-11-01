@@ -150,15 +150,27 @@ class IssuedCheck:
     amount: Decimal
     payee: str
     voided: bool
-    kind: str                 # "Payroll" | "Vendor"
+    kind: str                 # "Payroll" | "Vendor" | "By hand"
 
 
 def issued_checks(book: "TimecardBook") -> list[IssuedCheck]:
-    """Every check written (payroll and vendor), by number: the one register."""
+    """Every check written (payroll, vendor, and by hand: a check number typed on an approved expense), by number:
+    the one register. Expenses sharing a hand-written check number are one check."""
     out = [IssuedCheck(r.check_number, r.check_date, r.net_pay, r.employee_name, r.voided, "Payroll")
            for r in book.payroll]
     out += [IssuedCheck(p.check_number, p.check_date, p.amount, p.payee, p.voided, "Vendor")
             for p in book.vendor_payments]
+    known = {c.check_number for c in out}
+    by_hand: dict[int, IssuedCheck] = {}
+    for e in sorted(book.expenses, key=lambda e: e.expense_date):
+        if e.payment_method == "Check" and e.check_number and e.check_number not in known and e.status != "Draft":
+            c = by_hand.get(e.check_number)
+            if c is None:
+                by_hand[e.check_number] = IssuedCheck(e.check_number, e.expense_date, e.amount, e.vendor, False,
+                                                      "By hand")
+            else:
+                c.amount += e.amount
+    out += by_hand.values()
     return sorted(out, key=lambda c: (c.check_number, c.kind))
 
 

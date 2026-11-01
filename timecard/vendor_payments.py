@@ -29,7 +29,25 @@ CREATED = "*"   # marks, in VendorPayment.expense_ids, an expense made by the pa
 # ---- the one check-number sequence
 
 def used_check_numbers(book: "TimecardBook") -> set[int]:
-    return {r.check_number for r in book.payroll} | {p.check_number for p in book.vendor_payments}
+    """Payroll and vendor checks, and check numbers typed on expenses (a check written by hand)."""
+    return ({r.check_number for r in book.payroll} | {p.check_number for p in book.vendor_payments}
+            | {e.check_number for e in book.expenses if e.payment_method == "Check" and e.check_number})
+
+
+def payment_for(book: "TimecardBook", e: Expense) -> VendorPayment | None:
+    """The (not voided) vendor check that paid or made expense `e`, if any."""
+    return next((p for p in book.vendor_payments if not p.voided and e.check_number == p.check_number
+                 and e.expense_id in {ref.lstrip(CREATED) for ref in p.expense_ids.split(",")}), None)
+
+
+def check_number_taken(book: "TimecardBook", n: int, e: Expense) -> str:
+    """What already uses check number `n` (besides expense `e` and the vendor check that paid it), or ""."""
+    if any(r.check_number == n for r in book.payroll):
+        return "a payroll check"
+    p = next((p for p in book.vendor_payments if p.check_number == n), None)
+    if p is not None and p is not payment_for(book, e):
+        return f"the vendor check to {p.payee}"
+    return ""
 
 
 def next_check_number(book: "TimecardBook") -> int:
