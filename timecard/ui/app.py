@@ -768,6 +768,7 @@ class App(tk.Tk):
             # rent and subscriptions keep repeating in the new year; the owner's categories carry over too
             book.recurring = [dataclasses.replace(r) for r in carry_from.recurring]
             book.categories = list(carry_from.categories)
+            book.logo_png, book.check_background = carry_from.logo_png, carry_from.check_background
         return book
 
     def save(self) -> bool:

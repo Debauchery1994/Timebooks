@@ -232,12 +232,12 @@ def render_vendor_checks(payments: list[VendorPayment], book: "TimecardBook", ou
     recs = [(_stand_in(book, p), _payee(book, p)) for p in sorted(live, key=lambda p: p.check_number)]
     if lay == "handwrite":
         return ck._render_handwrite([r for r, _v in recs], _VendorBook(book, recs), out)
-    face_logo = ck._face_logo(book)
+    face = dict(logo=ck._face_logo(book), background=ck._face_background(book))
     if lay == "voucher":
         c = ck._new_canvas(out, title="Vendor Checks")
         stub_logo = ck._logo(book, "checks")
         for rec, vendor in recs:
-            ck._draw_check_in_slot(c, company, rec, vendor, 0, logo=face_logo)
+            ck._draw_check_in_slot(c, company, rec, vendor, 0, **face)
             c.saveState()
             ck._apply_offset(c, company)
             pg = ck._Page(c)
@@ -252,12 +252,10 @@ def render_vendor_checks(payments: list[VendorPayment], book: "TimecardBook", ou
     if lay == "manual_3up":
         w, h, _sw = ck._manual_dims(company)
         c = ck._new_canvas(out, pagesize=(w * inch, h * inch), title="Vendor Checks")
-        ck._run_slots(c, recs, sp, lambda rv, slot: ck._draw_manual_slot(c, company, rv[0], rv[1], slot,
-                                                                         logo=face_logo))
+        ck._run_slots(c, recs, sp, lambda rv, slot: ck._draw_manual_slot(c, company, rv[0], rv[1], slot, **face))
     else:
         c = ck._new_canvas(out, title="Vendor Checks")
-        ck._run_slots(c, recs, sp, lambda rv, slot: ck._draw_check_in_slot(c, company, rv[0], rv[1], slot,
-                                                                           logo=face_logo))
+        ck._run_slots(c, recs, sp, lambda rv, slot: ck._draw_check_in_slot(c, company, rv[0], rv[1], slot, **face))
     c.showPage()
     c.save()
     return out

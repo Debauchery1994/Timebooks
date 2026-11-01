@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 import re
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 MAX_LOGO_SIZE = (800, 400)
 MAX_INPUT_BYTES = 20 * 1024 * 1024
@@ -37,6 +37,49 @@ def normalize_logo(data: bytes) -> bytes:
     img.thumbnail(MAX_LOGO_SIZE, Image.LANCZOS)
     out = io.BytesIO()
     img.save(out, "PNG", optimize=True)
+    return out.getvalue()
+
+
+# The check-face picture covers the face above the MICR clear band (the bottom 5/8"), inset a little from the edges.
+BACKGROUND_BOX = (0.25, 0.15, 8.0, 2.725)   # left, top, width, height in inches on the 8.5" x 3.5" face
+BACKGROUND_DPI = 200
+BACKGROUND_FADE_RANGE = (5, 50)
+
+
+def normalize_background(data: bytes) -> bytes:
+    """Any common image -> a JPEG cropped (from the middle) to fill BACKGROUND_BOX at BACKGROUND_DPI. Stored unfaded;
+    the fade is applied when printing. Raises ValueError if the data isn't a readable image."""
+    if not data:
+        raise ValueError("The picture file is empty.")
+    if len(data) > MAX_INPUT_BYTES:
+        raise ValueError("The picture is too large (over 20 MB). Choose a smaller one.")
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("That file isn't a picture TimeBooks can read. Use a PNG, JPG or BMP.") from exc
+    img = ImageOps.exif_transpose(img)   # phone photos: stand them the right way up
+    if img.mode in ("RGBA", "LA", "P"):
+        img = img.convert("RGBA")
+        white = Image.new("RGBA", img.size, "white")
+        img = Image.alpha_composite(white, img)
+    img = img.convert("RGB")
+    size = (round(BACKGROUND_BOX[2] * BACKGROUND_DPI), round(BACKGROUND_BOX[3] * BACKGROUND_DPI))
+    img = ImageOps.fit(img, size, Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=85, optimize=True)
+    return out.getvalue()
+
+
+def fade_background(jpeg: bytes, percent: int) -> bytes:
+    """The picture blended toward white so only `percent` of it shows (kept within BACKGROUND_FADE_RANGE)."""
+    lo, hi = BACKGROUND_FADE_RANGE
+    k = min(max(int(percent or 0), lo), hi) / 100
+    with Image.open(io.BytesIO(jpeg)) as img:
+        img = img.convert("RGB")
+        faded = Image.blend(Image.new("RGB", img.size, "white"), img, k)
+    out = io.BytesIO()
+    faded.save(out, "JPEG", quality=85)
     return out.getvalue()
 
 

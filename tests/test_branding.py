@@ -119,3 +119,36 @@ class WorkbookLogoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CheckBackgroundTests(unittest.TestCase):
+    def test_cropped_to_the_face_and_faded_toward_white(self) -> None:
+        jpg = branding.normalize_background(image_bytes(size=(3000, 3000)))
+        with Image.open(io.BytesIO(jpg)) as img:
+            self.assertEqual(img.size, (1600, 545))   # 8" x 2.725" at 200 dpi, cropped from the middle
+        faded = branding.fade_background(jpg, 18)
+        with Image.open(io.BytesIO(faded)) as img:
+            r, g, b = img.getpixel((800, 270))
+        # (30, 90, 160) at 18% over white is about (214, 225, 238)
+        self.assertTrue(all(abs(a - e) <= 4 for a, e in zip((r, g, b), (214, 225, 238))), (r, g, b))
+        with Image.open(io.BytesIO(branding.fade_background(jpg, 95))) as img:   # held to the top of the range
+            self.assertGreater(img.getpixel((800, 270))[0], 120)
+        with self.assertRaises(ValueError):
+            branding.normalize_background(b"not a picture")
+
+    def test_round_trips_with_the_logo_and_stays_above_the_micr_band(self) -> None:
+        x, top, w, h = branding.BACKGROUND_BOX
+        self.assertLessEqual(top + h, 3.5 - 0.625)   # the MICR clear band is the bottom 5/8"
+        self.assertLessEqual(x + w, 8.5)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "b.xlsx"
+            book = TimecardBook.new(Company(company_name="Shop", year=2026))
+            book.set_check_background(image_bytes())
+            book.save(p)
+            loaded = TimecardBook.load(p)
+            self.assertEqual(loaded.check_background, book.check_background)
+            self.assertEqual(loaded.logo_png, b"")
+            loaded.set_logo(image_bytes(size=(200, 100)))
+            loaded.save(p)
+            again = TimecardBook.load(p)
+            self.assertEqual((again.check_background, again.logo_png), (book.check_background, loaded.logo_png))

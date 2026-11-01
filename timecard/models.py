@@ -81,6 +81,9 @@ class Company:
     print_offset_x: float = 0.0  # inches
     print_offset_y: float = 0.0  # inches
     signature_line_text: str = "Authorized Signature"
+    # Faded picture behind the check face, blank stock only (the picture is stored with the logo,
+    # TimecardBook.check_background). How strongly it shows, in percent: low keeps the writing easy to read.
+    check_background_fade: int = 18
 
 
 @dataclass

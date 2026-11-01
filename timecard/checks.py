@@ -170,6 +170,29 @@ def _face_logo(book) -> bytes:
     return _logo(book, "checks") if stock == "blank" else b""
 
 
+def _face_background(book) -> bytes:
+    """The check-face picture, faded for printing: blank stock only, b"" when there is none."""
+    stock = (getattr(book.company, "check_stock", "") or "preprinted").strip().lower()
+    pic = getattr(book, "check_background", b"") or b""
+    if stock != "blank" or not pic:
+        return b""
+    try:
+        return branding.fade_background(pic, getattr(book.company, "check_background_fade", 18))
+    except Exception:   # a damaged picture shouldn't stop checks from printing
+        return b""
+
+
+def _draw_background(c: rl_canvas.Canvas, pg: "_Page", jpeg: bytes) -> None:
+    """The faded picture in branding.BACKGROUND_BOX: above the MICR clear band, under everything else."""
+    if not jpeg:
+        return
+    x, top, w, h = branding.BACKGROUND_BOX
+    try:
+        c.drawImage(ImageReader(io.BytesIO(jpeg)), x * inch, pg.y(top + h), w * inch, h * inch)
+    except Exception:
+        pass
+
+
 def _draw_logo(c: rl_canvas.Canvas, png: bytes, x: float, y_top: float, max_w: float, max_h: float) -> float:
     """Draw the logo with its top-left corner at (x, y_top) in points, keeping its shape.
     Returns the drawn width in points (0 if there is no usable logo)."""
@@ -294,13 +317,14 @@ def _words_line(amount: Decimal) -> str:
 
 
 def _draw_check(pg: _Page, company: Company, rec: PayrollRecord, emp: Employee | None,
-                payee_name: str, logo: bytes = b"") -> None:
+                payee_name: str, logo: bytes = b"", background: bytes = b"") -> None:
     """Check face. Everything is black: the brand color is never printed on a check face.
-    ``logo`` is only drawn on blank stock (callers pass b"" otherwise)."""
+    ``logo`` and ``background`` (the faded picture) are only drawn on blank stock (callers pass b"" otherwise)."""
     c = pg.c
     blank = (company.check_stock or "preprinted").strip().lower() == "blank"
 
     if blank:
+        _draw_background(c, pg, background)
         # Optional logo, then the company block, top left
         lw = _draw_logo(c, logo, 0.5 * inch, pg.y(0.22), 1.5 * inch, 0.6 * inch)
         cx = 0.5 + (lw / inch + 0.12 if lw else 0.0)
@@ -393,12 +417,13 @@ def _draw_perforations(pg: _Page) -> None:
 
 
 def _draw_check_in_slot(c: rl_canvas.Canvas, company: Company, rec: PayrollRecord,
-                        emp: Employee | None, slot: int, void: bool = False, logo: bytes = b"") -> None:
+                        emp: Employee | None, slot: int, void: bool = False, logo: bytes = b"",
+                        background: bytes = b"") -> None:
     """Draw one check in slot 0..2 (0 = top third of the letter sheet)."""
     c.saveState()
     _apply_offset(c, company)
     c.translate(0, -SLOT_TOPS[slot] * inch)
-    _draw_check(_Page(c), company, rec, emp, _payee_name(rec, emp), logo)
+    _draw_check(_Page(c), company, rec, emp, _payee_name(rec, emp), logo, background)
     if void:
         _void_stamp(c)
     c.restoreState()
@@ -489,11 +514,11 @@ def _run_slots(c: rl_canvas.Canvas, items: list, start_position: int, draw) -> N
 def _render_laser(live, book, out: Path, sp: int, sample: bool = False) -> Path:
     company = book.company
     c = _new_canvas(out, title="Check Alignment Test" if sample else "Checks")
-    face_logo = _face_logo(book)
+    face_logo, face_bg = _face_logo(book), _face_background(book)
 
     def draw(rec, slot):
         emp = _SAMPLE_EMP if sample else book.employees.get(rec.employee_id)
-        _draw_check_in_slot(c, company, rec, emp, slot, void=sample, logo=face_logo)
+        _draw_check_in_slot(c, company, rec, emp, slot, void=sample, logo=face_logo, background=face_bg)
 
     _run_slots(c, live, sp, draw)
     if sample:
@@ -518,7 +543,8 @@ def _manual_dims(company: Company) -> tuple[float, float, float]:
 
 
 def _draw_manual_slot(c: rl_canvas.Canvas, company: Company, rec: PayrollRecord,
-                      emp: Employee | None, slot: int, void: bool = False, logo: bytes = b"") -> None:
+                      emp: Employee | None, slot: int, void: bool = False, logo: bytes = b"",
+                      background: bytes = b"") -> None:
     w, h, sw = _manual_dims(company)
     rh = h / 3.0
     top = slot * rh
@@ -557,7 +583,7 @@ def _draw_manual_slot(c: rl_canvas.Canvas, company: Company, rec: PayrollRecord,
     c.translate(sw * inch, h * inch - top * inch)
     c.scale(s, s)
     c.translate(0, -PAGE_H)
-    _draw_check(_Page(c), company, rec, emp, payee, logo)
+    _draw_check(_Page(c), company, rec, emp, payee, logo, background)
     if void:
         _void_stamp(c)
     c.restoreState()
@@ -568,11 +594,11 @@ def _render_manual(live, book, out: Path, sp: int, sample: bool = False) -> Path
     w, h, _sw = _manual_dims(company)
     c = _new_canvas(out, pagesize=(w * inch, h * inch),
                     title="Check Alignment Test" if sample else "Checks")
-    face_logo = _face_logo(book)
+    face_logo, face_bg = _face_logo(book), _face_background(book)
 
     def draw(rec, slot):
         emp = _SAMPLE_EMP if sample else book.employees.get(rec.employee_id)
-        _draw_manual_slot(c, company, rec, emp, slot, void=sample, logo=face_logo)
+        _draw_manual_slot(c, company, rec, emp, slot, void=sample, logo=face_logo, background=face_bg)
 
     _run_slots(c, live, sp, draw)
     if sample:
@@ -641,11 +667,11 @@ def _draw_simple_stub(pg: _Page, top: float, company: Company, rec: PayrollRecor
 def _render_voucher(live, book, out: Path, sample: bool = False) -> Path:
     company = book.company
     c = _new_canvas(out, title="Check Alignment Test" if sample else "Checks")
-    face_logo, stub_logo = _face_logo(book), _logo(book, "checks")
+    face_logo, face_bg, stub_logo = _face_logo(book), _face_background(book), _logo(book, "checks")
     for rec in live:
         emp = _SAMPLE_EMP if sample else book.employees.get(rec.employee_id)
         payee = _payee_name(rec, emp)
-        _draw_check_in_slot(c, company, rec, emp, 0, void=sample, logo=face_logo)
+        _draw_check_in_slot(c, company, rec, emp, 0, void=sample, logo=face_logo, background=face_bg)
         c.saveState()
         _apply_offset(c, company)
         pg = _Page(c)

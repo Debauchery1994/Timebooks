@@ -219,6 +219,7 @@ class TimecardBook:
     entries: dict[tuple[str, date], TimeEntry]
     payroll: list[PayrollRecord]
     logo_png: bytes  # company logo (PNG from branding.normalize_logo), b"" when none
+    check_background: bytes  # picture behind the check face (JPEG from branding.normalize_background), b"" when none
     dirty: bool
 
     def __init__(self, company: Company | None = None, path: Path | None = None) -> None:
@@ -235,6 +236,7 @@ class TimecardBook:
         self.vendor_payments: list[VendorPayment] = []
         self.categories: list[str] = list(expenses_mod.DEFAULT_CATEGORIES)
         self.logo_png = b""
+        self.check_background = b""
         self.dirty = False
         self.disk_stamp: tuple[int, int] | None = None   # (mtime_ns, size) of the file when loaded/saved
         self.schema_version = SCHEMA_VERSION   # of the file as loaded (1 for workbooks without the marker)
@@ -361,6 +363,7 @@ class TimecardBook:
                 book.categories = [c for c in dict.fromkeys(cats) if c] or list(expenses_mod.DEFAULT_CATEGORIES)
             if (ws := sheet("branding")) is not None:
                 book.logo_png = cls._read_logo(ws)
+                book.check_background = cls._read_logo(ws, "check_bg")
         finally:
             wb.close()
         book.dirty = False
@@ -585,21 +588,34 @@ class TimecardBook:
         self.logo_png = b""
         self.dirty = True
 
+    def set_check_background(self, image: bytes | str | Path) -> None:
+        """Store the check-face picture from image bytes or a file path (cropped to the check, as a JPEG)."""
+        data = image if isinstance(image, bytes) else Path(image).read_bytes()
+        self.check_background = branding.normalize_background(data)
+        self.dirty = True
+
+    def clear_check_background(self) -> None:
+        self.check_background = b""
+        self.dirty = True
+
     @staticmethod
-    def _read_logo(ws: Worksheet) -> bytes:
+    def _read_logo(ws: Worksheet, key: str = "logo_png") -> bytes:
+        """A picture stored on the Branding sheet as base64 chunks named key_000, key_001, ..."""
         chunks = [str(r[1].value) for r in ws.iter_rows(min_row=2, max_col=2)
-                  if str(r[0].value or "").startswith("logo_png") and r[1].value]
+                  if str(r[0].value or "").startswith(key + "_") and r[1].value]
         try:
             return base64.b64decode("".join(chunks), validate=True) if chunks else b""
         except (ValueError, binascii.Error):
             return b""  # a damaged logo shouldn't stop the workbook from opening
 
     def _write_branding(self, ws: Worksheet) -> None:
-        """Logo as base64 text in chunks (a cell holds at most 32,767 characters). The sheet is hidden."""
+        """Logo and check picture as base64 text in chunks (a cell holds at most 32,767 characters). The sheet is
+        hidden."""
         _write_header(ws, ["Key", "Value"], [14, 80])
-        text = base64.b64encode(self.logo_png).decode("ascii")
-        for i in range(0, len(text), LOGO_CHUNK):
-            ws.append([f"logo_png_{i // LOGO_CHUNK:03d}", text[i:i + LOGO_CHUNK]])
+        for key, data in (("logo_png", self.logo_png), ("check_bg", self.check_background)):
+            text = base64.b64encode(data).decode("ascii")
+            for i in range(0, len(text), LOGO_CHUNK):
+                ws.append([f"{key}_{i // LOGO_CHUNK:03d}", text[i:i + LOGO_CHUNK]])
         ws.sheet_state = "hidden"
 
     def _build_workbook(self) -> openpyxl.Workbook:
@@ -618,7 +634,7 @@ class TimecardBook:
         self._write_vendors(wb.create_sheet("Vendors"))
         self._write_accounts(wb.create_sheet("Accounts"))
         self._write_vendor_payments(wb.create_sheet("VendorPayments"))
-        if self.logo_png:
+        if self.logo_png or self.check_background:
             self._write_branding(wb.create_sheet("Branding"))
         return wb
 

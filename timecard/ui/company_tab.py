@@ -68,6 +68,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         ("Checks", "print_offset_x", "Print offset X (inches)", "float", None),
         ("Checks", "print_offset_y", "Print offset Y (inches)", "float", None),
         ("Checks", "signature_line_text", "Signature line text", "str", None),
+        ("Checks", "check_background_fade", "Check picture strength (%)", "int", None),
         ("Branding", "brand_color", "Brand color", "color", None),
         ("Branding", "logo_on_checks", "Checks", "bool", "Show logo on checks (stubs; check face only on blank stock)"),
         ("Branding", "logo_on_reports", "Reports", "bool",
@@ -201,6 +202,9 @@ class CompanyTab(PinLockable, ttk.Frame):
                            cursor="hand2", command=lambda: webbrowser.open(MICR_FONT_URL)).grid(
                     row=r + 1, column=1, sticky="w", pady=(0, 3))
                 rows[section] += 1
+            if fname == "check_background_fade":
+                self._build_background_controls(lf, r + 1)
+                rows[section] += 2
             if fname == "account_number":
                 ttk.Checkbutton(lf, text="Show bank numbers", variable=self.v_show,
                                 command=self._toggle_show).grid(row=r + 1, column=1, sticky="w", pady=3)
@@ -341,6 +345,53 @@ class CompanyTab(PinLockable, ttk.Frame):
         self.app.refresh_branding()
         self.app.status(f"Logo removed.{self.app.save_hint()}")
 
+    def _build_background_controls(self, lf, r: int) -> None:
+        """The faded picture behind the check face (blank stock): choose / remove, and what's set now."""
+        bf = ttk.Frame(lf)
+        bf.grid(row=r, column=1, sticky="w", pady=(0, 3))
+        ttk.Button(bf, text="Choose Picture…", command=self.choose_background).pack(side="left")
+        ttk.Button(bf, text="Remove Picture", command=self.remove_background).pack(side="left", padx=6)
+        self.lbl_background = ttk.Label(bf, text="", style="Muted.TLabel")
+        self.lbl_background.pack(side="left")
+        ttk.Label(lf, text="A faded picture behind the check, like the scenes on bought checks. Blank stock only; it "
+                  "stays out of the MICR line at the bottom. Keep it light (15–20%) so the amount, payee and "
+                  "signature are easy to read. Print the alignment test to see it.", style="Muted.TLabel",
+                  wraplength=360).grid(row=r + 1, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+    def refresh_background_label(self) -> None:
+        has = self.book is not None and bool(self.book.check_background)
+        self.lbl_background.configure(text="Picture set" if has else "No picture")
+
+    def choose_background(self) -> None:
+        if self.book is None or self.locked:
+            return
+        path = filedialog.askopenfilename(parent=self, title="Choose a picture for the checks",
+                                          filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"),
+                                                     ("All files", "*.*")])
+        if path:
+            self.set_background(path)
+
+    def set_background(self, path_or_bytes) -> bool:
+        try:
+            self.book.set_check_background(path_or_bytes)
+        except (ValueError, OSError) as exc:
+            messagebox.showwarning("Check picture", str(exc), parent=self)
+            return False
+        self.app.mark_dirty()
+        self.refresh_background_label()
+        stock = (self.vars["check_stock"].get() or "").strip().lower()
+        self.app.status("Check picture added." + ("" if stock == "blank" else " It prints on Blank check stock "
+                                                  "only.") + self.app.save_hint())
+        return True
+
+    def remove_background(self) -> None:
+        if self.book is None or self.locked or not self.book.check_background:
+            return
+        self.book.clear_check_background()
+        self.app.mark_dirty()
+        self.refresh_background_label()
+        self.app.status(f"Check picture removed.{self.app.save_hint()}")
+
     def _update_swatch(self) -> None:
         val = self.vars["brand_color"].get().strip()
         ok = branding.is_valid_color(val)
@@ -412,6 +463,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         self._update_layout_state()
         self._update_swatch()
         self.refresh_logo_preview()
+        self.refresh_background_label()
         self.relayout_sections()
         if any(getattr(c, f[1], 0) for f in self.FIELDS if f[0] == "Advanced") and not self.v_adv_open.get():
             self._toggle_advanced()   # show non-zero withholding so it isn't hidden
@@ -471,6 +523,9 @@ class CompanyTab(PinLockable, ttk.Frame):
             errors.append("Brand color must look like #1F3A5F (a # and six hex digits).")
         else:
             changes["brand_color"] = changes["brand_color"].upper()
+        lo, hi = branding.BACKGROUND_FADE_RANGE
+        if not lo <= changes.get("check_background_fade", 18) <= hi:
+            errors.append(f"Check picture strength must be between {lo} and {hi}%.")
         if changes.get("check_layout") not in {k for k, _ in CHECK_LAYOUTS}:
             errors.append("Choose a check layout.")
         if changes.get("check_layout") == "manual_3up":

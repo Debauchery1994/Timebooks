@@ -211,6 +211,24 @@ class ChecksPdfTests(unittest.TestCase):
         for gone in ("EMPLOYEE COPY", "Year to Date", "NET PAY", "Social Security"):
             self.assertNotIn(gone, text)
 
+    def test_check_picture_on_blank_stock_only(self):
+        import io
+
+        from PIL import Image
+
+        from timecard import branding
+        raw = io.BytesIO()
+        Image.new("RGB", (900, 600), (40, 120, 60)).save(raw, "JPEG")
+        pic = branding.normalize_background(raw.getvalue())
+        for stock, expect in (("blank", 1), ("preprinted", 0)):
+            book = _make_book(stock)
+            book.check_background = pic
+            p = checks.render_checks(book.payroll, book, OUT_DIR / f"checks_picture_{stock}.pdf")
+            # one picture shared by all three checks on the sheet; none on preprinted stock
+            self.assertEqual(p.read_bytes().count(b"/Subtype /Image"), expect, stock)
+            p = checks.render_alignment_test(book, OUT_DIR / f"align_picture_{stock}.pdf")
+            self.assertEqual(p.read_bytes().count(b"/Subtype /Image"), expect, stock)
+
     def test_default_memo(self):
         rec = PayrollRecord(1, date(2026, 1, 9), date(2025, 12, 29), date(2026, 1, 11), "E001", "x",
                             Decimal("38.5"), Decimal("1.25"))
