@@ -4,6 +4,9 @@ clock PIN and TimeBooks fills their next empty In / Out for today.
 The page only answers at the code in its address (kept in Company Settings so a printed QR keeps working; a new code
 can be made if it leaks), only while TimeBooks is open with that workbook, and a PIN can only clock someone in or out:
 the owner still approves time cards. Wrong PINs lock that phone out for a while, and too many stop the page.
+
+The QR also holds the PC's network address, which the router can change (e.g. after a restart). The page listens on
+every address of the PC, and TimeBooks warns when the address no longer matches the printed sign.
 """
 from __future__ import annotations
 
@@ -112,7 +115,9 @@ class ClockServer:
     """Serves the clock-in page at http://<host>:<port>/<code>/. `handle(pin)` decides a punch and must run on the UI
     thread: requests wait (briefly) for the UI loop to answer them through `requests` (see `serve_pending`)."""
 
-    def __init__(self, host: str, port: int, code: str, company: str):
+    def __init__(self, host: str, port: int, code: str, company: str, bind: str | None = None):
+        """`host` is the address shown in the QR code; `bind` is where the page listens ("0.0.0.0" = every network
+        address of this PC, so it keeps answering if the PC's address changes or the network comes up later)."""
         self.code, self.company = code, company
         self.requests: queue.Queue = queue.Queue()
         self._waiting: dict[str, int] = {}   # PIN checks in progress per phone (counted before they're checked)
@@ -196,7 +201,7 @@ class ClockServer:
                     self._page(answer.get("message") or "That PIN wasn't recognised.", 403)
 
         ThreadingHTTPServer.daemon_threads = True
-        self.httpd = ThreadingHTTPServer((host, port), Handler)
+        self.httpd = ThreadingHTTPServer((host if bind is None else bind, port), Handler)
         self.httpd.block_on_close = False   # closing TimeBooks never waits on a phone mid-request
         self.host, self.port = host, self.httpd.server_address[1]
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)

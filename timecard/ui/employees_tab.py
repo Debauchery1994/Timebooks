@@ -344,6 +344,9 @@ class EmployeesTab(PinLockable, ttk.Frame):
         self.btn_deact = ttk.Button(form, text="No Longer With Company", command=self.toggle_active)
         self.btn_deact.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         r += 1
+        ttk.Button(form, text="Delete (duplicate / added by mistake)…", command=self.delete).grid(
+            row=r, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        r += 1
         ttk.Button(form, text="Set Pay Rate\u2026", command=self.set_pay_rate).grid(row=r, column=0, columnspan=2,
                                                                                 sticky="ew", pady=(8, 0))
         r += 1
@@ -515,8 +518,24 @@ class EmployeesTab(PinLockable, ttk.Frame):
                     w9_on_file=bool(self.v_w9.get()), w9_date=w9_date if self.v_w9.get() else None)
 
     def add(self) -> None:
+        if self.book is None:
+            return
+        if self.selected is not None:   # Add with someone open would copy them into a second person
+            cur = self.book.employees.get(self.selected)
+            messagebox.showinfo("Employees", f"{cur.full_name if cur else 'Someone'} is open. To add a new person, "
+                                "click New first (it clears the form). To save changes to the open person, click "
+                                "Save.", parent=self)
+            return
         vals = self._form_values()
-        if vals is None or self.book is None:
+        if vals is None:
+            return
+        name = (vals["first_name"].lower(), vals["last_name"].lower())
+        same = next((e for e in self.book.employees.values()
+                     if (e.first_name.strip().lower(), e.last_name.strip().lower()) == name), None)
+        if same is not None and not messagebox.askyesno(
+                "Employees", f"There is already a {same.full_name} ({same.employee_id}"
+                + ("" if same.active else ", no longer with the company") + "). Add another person with the same "
+                "name?", parent=self):
             return
         eid = self.book.next_employee_id()
         emp = Employee(employee_id=eid, **vals)
@@ -588,6 +607,41 @@ class EmployeesTab(PinLockable, ttk.Frame):
         self.app.refresh_employees()
         self.app.status(f"{cur.full_name} " + ("is marked as no longer with the company (records kept)."
                                                if cur.active else "has been reactivated."))
+
+    def delete(self) -> None:
+        """Remove a person added by mistake (a duplicate). Anyone with checks or other money records is refused:
+        mark them "No Longer With Company" so the books keep them."""
+        if self.book is None or self.locked:
+            return
+        if self.selected is None:
+            messagebox.showinfo("Delete", "Select the person to delete first.", parent=self)
+            return
+        emp = self.book.employees[self.selected]
+        recs = self.book.employee_records(emp.employee_id)
+        days = recs.pop("time card days", 0)
+        if recs:
+            messagebox.showwarning(
+                "Delete", f"{emp.full_name} ({emp.employee_id}) can't be deleted: they have "
+                + ", ".join(f"{n} {k}" for k, n in recs.items()) + ", which the books need to keep.\n\n"
+                "If they're no longer with the company, use No Longer With Company instead.", parent=self)
+            return
+        twins = [e for e in self.book.employees.values() if e.employee_id != emp.employee_id
+                 and (e.first_name.strip().lower(), e.last_name.strip().lower())
+                 == (emp.first_name.strip().lower(), emp.last_name.strip().lower())]
+        msg = f"Delete {emp.full_name} ({emp.employee_id})?"
+        if twins:
+            msg += f"\n\nThe other {emp.full_name} ({', '.join(e.employee_id for e in twins)}) is kept."
+        if days:
+            msg += (f"\n\nThis also deletes their {days} time card day(s). If those hours belong to the real "
+                    f"{emp.full_name}, enter them there first.")
+        if not messagebox.askyesno("Delete", msg + "\n\nThis can't be undone (except by restoring a backup).",
+                                   icon="warning", parent=self):
+            return
+        self.book.remove_employee(emp.employee_id)
+        self.selected = None
+        self.app.mark_dirty()
+        self.app.refresh_employees()
+        self.app.status(f"Deleted {emp.full_name} ({emp.employee_id}).{self.app.save_hint()}")
 
     def set_clock_pin(self) -> None:
         if self.selected is None:

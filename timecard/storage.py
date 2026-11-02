@@ -937,6 +937,29 @@ class TimecardBook:
         emp = self.employees.get(employee_id)
         return emp is not None and emp.pay_rate > 0
 
+    def employee_records(self, employee_id: str) -> dict[str, int]:
+        """What is recorded for a person, by kind, e.g. {"time card days": 3}. Kinds with nothing are left out."""
+        counts = {
+            "time card days": sum(1 for (eid, _d) in self.entries if eid == employee_id),
+            "checks": sum(1 for r in self.payroll if r.employee_id == employee_id),
+            "cash advances": sum(1 for a in self.advances if a.employee_id == employee_id),
+            "expenses": sum(1 for e in self.expenses if e.person_id == employee_id),
+            "mileage trips": sum(1 for t in self.trips if t.person_id == employee_id),
+            "money in / out entries": sum(1 for m in self.account_entries if m.person_id == employee_id),
+        }
+        return {k: n for k, n in counts.items() if n}
+
+    def remove_employee(self, employee_id: str) -> None:
+        """Delete a person added by mistake (e.g. a duplicate) along with their time card days. Anything with money
+        (checks, advances, expenses, trips, money entries) must not exist: those people are marked "no longer with
+        the company" instead, so the books keep them."""
+        money = {k: n for k, n in self.employee_records(employee_id).items() if k != "time card days"}
+        if money:
+            raise ValueError("has " + ", ".join(f"{n} {k}" for k, n in money.items()))
+        self.entries = {k: e for k, e in self.entries.items() if k[0] != employee_id}
+        del self.employees[employee_id]
+        self.dirty = True
+
     def active_employees(self) -> list[Employee]:
         return sorted((e for e in self.employees.values() if e.active),
                       key=lambda e: (e.last_name.lower(), e.first_name.lower(), e.employee_id))

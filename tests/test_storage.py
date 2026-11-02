@@ -80,6 +80,23 @@ class StorageTests(unittest.TestCase):
         self.assertIn("Ray, Bo (former)", names)
         self.assertNotIn("E003", ids)
 
+    def test_delete_a_duplicate_but_never_someone_with_money_records(self) -> None:
+        book = sample_book()
+        book.upsert_employee(Employee("E003", "Ann", "Lee"))                    # duplicate, a stray time card day
+        book.set_entry(TimeEntry(date(2026, 1, 7), "E003", time(8), time(16)))
+        self.assertEqual(book.employee_records("E003"), {"time card days": 1})
+        self.assertEqual(book.employee_records("E001"), {"time card days": 2, "checks": 1})
+        with self.assertRaises(ValueError):
+            book.remove_employee("E001")                                         # has a check: refused
+        self.assertIn("E001", book.employees)
+        book.remove_employee("E003")
+        self.assertNotIn("E003", book.employees)
+        self.assertFalse(any(eid == "E003" for eid, _d in book.entries))
+        self.assertEqual(len(book.entries_for("E001", date(2026, 1, 1), date(2026, 1, 31))), 2)   # untouched
+        loaded = TimecardBook.load(book.save(self.dir / "acme.xlsx"))
+        self.assertEqual(sorted(loaded.employees), ["E001", "E002"])
+        self.assertEqual(loaded.company.clock_sign_host, "")
+
     def test_schema_and_formats(self) -> None:
         path = sample_book().save(self.dir / "acme.xlsx")
         wb = openpyxl.load_workbook(path)

@@ -101,6 +101,19 @@ class ClockPageTests(unittest.TestCase):
             exc.close()
             return exc.code, body
 
+    def test_page_listens_apart_from_the_address_in_the_qr(self) -> None:
+        # the app listens on every address (0.0.0.0) so a new address from the router still reaches the page; here
+        # the listening address is loopback and the QR address is a made-up one that can be changed later
+        srv = timeclock.ClockServer("192.0.2.10", 0, "CODE9", "Acme Auto", bind="127.0.0.1").start()
+        try:
+            self.assertEqual(srv.url, f"http://192.0.2.10:{srv.port}/CODE9/")
+            with urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/CODE9/", timeout=5) as r:
+                self.assertIn("Acme Auto", r.read().decode())
+            srv.host = "192.0.2.77"   # the PC got a new address: the QR follows it
+            self.assertEqual(srv.url, f"http://192.0.2.77:{srv.port}/CODE9/")
+        finally:
+            srv.stop()
+
     def test_right_pin_clocks_and_wrong_pins_lock_the_phone(self) -> None:
         with urllib.request.urlopen(self.srv.url, timeout=5) as r:
             page = r.read().decode()

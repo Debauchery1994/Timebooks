@@ -57,6 +57,7 @@ class Company:
     clock_enabled: bool = False
     clock_port: int = 8770
     clock_code: str = ""
+    clock_sign_host: str = ""    # the PC's network address when the sign was printed (warns if it has changed)
     # Tabs the owner has put behind the PIN (Company Settings > Locked by PIN). Company Settings itself is always
     # locked, since these switches live there. There is one PIN for the whole app, set up when it was installed.
     lock_timecard: bool = False

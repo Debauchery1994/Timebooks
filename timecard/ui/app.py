@@ -628,16 +628,42 @@ class App(tk.Tk):
         if not wanted:
             return
         try:
+            # listens on every address of this PC, so it still answers after the router hands out a new one
             self.clock = timeclock.ClockServer(phone_upload.local_ip(), int(c.clock_port or 8770), c.clock_code,
-                                               c.company_name).start()
+                                               c.company_name, bind="0.0.0.0").start()
         except OSError as exc:
             log.warning("Phone clock-in could not start: %s", exc)
             self.status(f"Phone clock-in couldn't start (port {c.clock_port} may be in use; change it in Company "
                         "Settings).", error=True)
             return
         log.info("Phone clock-in at %s:%s", self.clock.host, self.clock.port)
+        self._clock_warned = ""
+        self.after(2000, self.clock_address_check)
         if self._clock_job is None:
             self._clock_job = self.after(300, self._clock_poll)
+
+    def clock_sign_outdated(self) -> str:
+        """The address on the printed clock-in sign, when this PC's address no longer matches it (else "")."""
+        c = self.book.company if self.book is not None else None
+        if self.clock is None or c is None or not c.clock_sign_host:
+            return ""
+        return c.clock_sign_host if c.clock_sign_host != f"{self.clock.host}:{self.clock.port}" else ""
+
+    def clock_address_check(self) -> None:
+        """Follow this PC's network address (it can change after a restart or when the Wi-Fi reconnects) and warn
+        once per change when the printed sign no longer points here."""
+        if self.clock is None or self.clock.stopped:
+            return
+        ip = phone_upload.local_ip()
+        if ip != self.clock.host:
+            log.info("Phone clock-in: this PC's address changed from %s to %s", self.clock.host, ip)
+            self.clock.host = ip
+        old = self.clock_sign_outdated()
+        if old and old != getattr(self, "_clock_warned", ""):
+            self._clock_warned = old
+            self.status(f"Phone clock-in: this PC's network address changed (sign says {old}, now "
+                        f"{self.clock.host}:{self.clock.port}). Print a new sign from Time Card > Clock-in QR.",
+                        error=True)
 
     def _clock_poll(self) -> None:
         self._clock_job = None
@@ -649,6 +675,9 @@ class App(tk.Tk):
             self.clock = None
             return
         self.clock.serve_pending(self._clock_punch)
+        self._clock_ticks = getattr(self, "_clock_ticks", 0) + 1
+        if self._clock_ticks % 100 == 0:   # about every 30 seconds
+            self.clock_address_check()
         self._clock_job = self.after(300, self._clock_poll)
 
     def _clock_punch(self, pin: str) -> tuple[bool, str]:
