@@ -10,8 +10,9 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import TYPE_CHECKING
 
 from .. import branding, calc
+from .clock_dialog import set_starts_with_windows, starts_with_windows, startup_supported
 from .common import (
-    CHECK_LAYOUTS, F, MANUAL_FIELDS, P, ScrollFrame, _appearance, is_salaried, logo_photo, scaled, tag_role,
+    CHECK_LAYOUTS, F, MANUAL_FIELDS, P, ScrollFrame, _appearance, is_salaried, log, logo_photo, scaled, tag_role,
 )
 from .pin import PinLockable
 
@@ -236,6 +237,22 @@ class CompanyTab(PinLockable, ttk.Frame):
                        "back on and everything is still there. With time cards off, Pay & Checks pays salaried "
                        "people only (hourly pay comes from Time Card hours).").grid(
             row=rows["Features"], column=0, columnspan=2, sticky="w", pady=(8, 0))
+        rows["Features"] += 1
+        # This computer only (not stored in the workbook): takes effect right away, no Save needed
+        ttk.Label(frames["Features"], text="This computer").grid(row=rows["Features"], column=0, sticky="w",
+                                                                 pady=(10, 3), padx=(0, 10))
+        self.v_startup = tk.BooleanVar(value=starts_with_windows())
+        self.chk_startup = ttk.Checkbutton(frames["Features"], text="Open TimeBooks when Windows starts",
+                                           variable=self.v_startup, command=self._toggle_startup)
+        self.chk_startup.grid(row=rows["Features"], column=1, sticky="w", pady=(10, 3))
+        ttk.Label(frames["Features"], style="Muted.TLabel", wraplength=420, justify="left",
+                  text="Opens with the last workbook, so phone clock-in is ready after a restart. Applies to this "
+                       "computer right away."
+                       + ("" if startup_supported() else " (Only in the installed app.)")).grid(
+            row=rows["Features"] + 1, column=0, columnspan=2, sticky="w")
+        if not startup_supported():
+            self.chk_startup.state(["disabled"])
+        rows["Features"] += 2
         ttk.Label(frames["Locked by PIN"], style="Muted.TLabel", wraplength=420, justify="left",
                   text="Locked tabs ask for the PIN set up when TimeBooks was installed (File > Change PIN to "
                        "change it) and lock again when you leave them or after 5 minutes. Company Settings is "
@@ -460,6 +477,7 @@ class CompanyTab(PinLockable, ttk.Frame):
         self.v_show.set(False)
         self._toggle_show()
         self.v_data_path.set(str(self.book.path) if self.book.path else "Not saved yet")
+        self.v_startup.set(starts_with_windows())   # may have been changed in the clock-in QR window
         self._update_ot_state()
         self._update_layout_state()
         self._update_swatch()
@@ -468,6 +486,18 @@ class CompanyTab(PinLockable, ttk.Frame):
         self.relayout_sections()
         if any(getattr(c, f[1], 0) for f in self.FIELDS if f[0] == "Advanced") and not self.v_adv_open.get():
             self._toggle_advanced()   # show non-zero withholding so it isn't hidden
+
+    def _toggle_startup(self) -> None:
+        on = bool(self.v_startup.get())
+        try:
+            set_starts_with_windows(on)
+        except OSError as exc:
+            log.warning("Start with Windows: %s", exc)
+            messagebox.showwarning("Company Settings", f"Windows didn't allow that:\n{exc}", parent=self)
+            self.v_startup.set(starts_with_windows())
+            return
+        self.app.status("TimeBooks will open when Windows starts on this computer." if on else
+                        "TimeBooks won't open when Windows starts.")
 
     def save(self) -> None:
         if self.book is None or self.locked:
